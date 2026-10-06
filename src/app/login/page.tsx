@@ -2,15 +2,37 @@
 
 import { ArrowRight, Eye, EyeOff, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
+import { api } from "@/lib/api/client";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      await api.post("/auth/login", { email, password, remember });
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (requestError: any) {
+      const message =
+        requestError?.response?.data?.message ??
+        "No pudimos iniciar sesión. Inténtalo de nuevo.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -41,16 +63,37 @@ export default function LoginPage() {
               <p>Accede a tu panel de TrendinShop.</p>
             </div>
 
+            {error && <div className="auth-error" role="alert">{error}</div>}
+
             <form className="auth-form" onSubmit={handleSubmit}>
               <label className="field">
                 <span>Correo electrónico</span>
-                <input type="email" placeholder="nombre@correo.com" autoComplete="email" required />
+                <input
+                  type="email"
+                  placeholder="nombre@correo.com"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  disabled={loading}
+                />
               </label>
 
               <label className="field">
-                <div className="field-label-row"><span>Contraseña</span><button type="button" className="field-link">¿Olvidaste tu contraseña?</button></div>
+                <div className="field-label-row">
+                  <span>Contraseña</span>
+                  <button type="button" className="field-link">¿Olvidaste tu contraseña?</button>
+                </div>
                 <div className="password-input">
-                  <input type={showPassword ? "text" : "password"} placeholder="••••••••" autoComplete="current-password" required />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    disabled={loading}
+                  />
                   <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Mostrar contraseña">
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
@@ -58,11 +101,14 @@ export default function LoginPage() {
               </label>
 
               <label className="check-row">
-                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} disabled={loading} />
                 <span>Recordarme en este dispositivo</span>
               </label>
 
-              <button className="auth-submit" type="submit">Entrar a TrendinShop<ArrowRight size={17} /></button>
+              <button className="auth-submit" type="submit" disabled={loading}>
+                {loading ? "Entrando..." : "Entrar a TrendinShop"}
+                {!loading && <ArrowRight size={17} />}
+              </button>
             </form>
 
             <div className="auth-divider"><span>o</span></div>
