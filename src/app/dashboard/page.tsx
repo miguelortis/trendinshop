@@ -1,8 +1,11 @@
+"use client";
+
 import {
   ArrowDownLeft, ArrowUpRight, CircleAlert, Clock3, PackageCheck,
   Plus, ShoppingCart, UsersRound,
 } from "lucide-react";
 import Link from "next/link";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const stats = [
   { label: "Ventas del mes", value: "$12,840", change: "+12.8%", hint: "vs. mes anterior", positive: true, icon: ShoppingCart },
@@ -25,13 +28,17 @@ const stock = [
 ];
 
 export default function DashboardPage() {
+  const { data: user } = useCurrentUser();
+  const firstName = user?.firstName ?? "administrador";
+  const roleLabel = user?.role === "RESELLER" ? "revendedor" : "administrador";
+
   return (
     <div className="dashboard-page">
       <section className="page-heading">
         <div>
           <span className="page-kicker">Resumen</span>
-          <h1>Buenos días, administrador 👋</h1>
-          <p>Aquí tienes una vista rápida de cómo va tu negocio.</p>
+          <h1>Buenos días, {firstName} 👋</h1>
+          <p>Aquí tienes una vista rápida de tu negocio como {roleLabel}.</p>
         </div>
         <Link href="/dashboard/sales/new" className="primary-button"><Plus size={17} />Nueva venta</Link>
       </section>
