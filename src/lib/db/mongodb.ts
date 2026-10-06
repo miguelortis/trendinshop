@@ -18,15 +18,18 @@ const cached: MongooseCache =
 
 global.mongooseCache = cached;
 
-function getMongoUri() {
-  const raw = process.env.MONGODB_URI?.trim();
+function requireMongoUri(): string {
+  const value = process.env.MONGODB_URI;
 
-  if (!raw) {
+  if (typeof value !== "string") {
     throw new Error("MONGODB_URI no está configurada.");
   }
 
-  // Evita errores comunes al copiar una URI a Vercel con comillas alrededor.
-  const uri = raw.replace(/^(['"])|(['"])$/g, "");
+  const uri = value.trim().replace(/^['"]|['"]$/g, "");
+
+  if (!uri) {
+    throw new Error("MONGODB_URI no puede estar vacía.");
+  }
 
   if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
     throw new Error(
@@ -42,8 +45,10 @@ export async function connectMongoDB() {
     return cached.conn;
   }
 
+  const mongoUri: string = requireMongoUri();
+
   if (!cached.promise) {
-    cached.promise = mongoose.connect(getMongoUri(), {
+    cached.promise = mongoose.connect(mongoUri, {
       bufferCommands: false,
     });
   }
