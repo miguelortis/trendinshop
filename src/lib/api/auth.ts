@@ -11,7 +11,20 @@ const COOKIE_BASE = {
   path: "/",
 };
 
-function publicUser(user: any) {
+type AuthUser = {
+  _id: { toString(): string };
+  documentId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  gender: string;
+  birthDate: Date;
+  phone: string;
+  role: string;
+  isActive: boolean;
+};
+
+function publicUser(user: AuthUser) {
   return {
     id: user._id.toString(),
     documentId: user.documentId,
@@ -21,7 +34,7 @@ function publicUser(user: any) {
     gender: user.gender,
     birthDate: user.birthDate,
     phone: user.phone,
-    role: user.role,
+    role: user.role as "ADMIN" | "RESELLER",
     isActive: user.isActive,
   };
 }
@@ -104,7 +117,7 @@ export async function registerUser(request: Request) {
       isActive: true,
     });
 
-    const token = await createSessionToken({ id: user._id.toString(), role: user.role }, true);
+    const token = await createSessionToken({ id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" }, true);
     const response = NextResponse.json(
       { ok: true, user: publicUser(user), message: "Cuenta creada correctamente." },
       { status: 201 },
