@@ -10,30 +10,27 @@ declare global {
   var mongooseCache: MongooseCache | undefined;
 }
 
-const cached = global.mongooseCache ?? {
-  conn: null,
-  promise: null,
-};
+const cached: MongooseCache =
+  global.mongooseCache ?? {
+    conn: null,
+    promise: null,
+  };
 
 global.mongooseCache = cached;
-
-function getMongoUri(): string {
-  const uri = process.env.MONGODB_URI;
-
-  if (!uri) {
-    throw new Error("Define MONGODB_URI en las variables de entorno.");
-  }
-
-  return uri;
-}
 
 export async function connectMongoDB() {
   if (cached.conn) {
     return cached.conn;
   }
 
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error("Define MONGODB_URI en las variables de entorno.");
+  }
+
   if (!cached.promise) {
-    cached.promise = mongoose.connect(getMongoUri(), {
+    cached.promise = mongoose.connect(mongoUri, {
       bufferCommands: false,
     });
   }
