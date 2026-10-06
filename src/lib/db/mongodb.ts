@@ -18,18 +18,24 @@ const cached: MongooseCache =
 
 global.mongooseCache = cached;
 
-function requireMongoUri(): string {
-  const value = process.env.MONGODB_URI;
+function requireEnv(name: "MONGODB_URI" | "MONGODB_DB"): string {
+  const value = process.env[name];
 
   if (typeof value !== "string") {
-    throw new Error("MONGODB_URI no está configurada.");
+    throw new Error(`${name} no está configurada.`);
   }
 
-  const uri = value.trim().replace(/^['"]|['"]$/g, "");
+  const normalized = value.trim().replace(/^['"]|['"]$/g, "");
 
-  if (!uri) {
-    throw new Error("MONGODB_URI no puede estar vacía.");
+  if (!normalized) {
+    throw new Error(`${name} no puede estar vacía.`);
   }
+
+  return normalized;
+}
+
+function requireMongoUri(): string {
+  const uri = requireEnv("MONGODB_URI");
 
   if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
     throw new Error(
@@ -45,11 +51,14 @@ export async function connectMongoDB() {
     return cached.conn;
   }
 
-  const mongoUri: string = requireMongoUri();
+  const mongoUri = requireMongoUri();
+  const databaseName = requireEnv("MONGODB_DB");
 
   if (!cached.promise) {
     cached.promise = mongoose.connect(mongoUri, {
       bufferCommands: false,
+      dbName: databaseName,
+      authSource: "admin",
     });
   }
 
