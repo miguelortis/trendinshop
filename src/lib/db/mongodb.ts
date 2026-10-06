@@ -18,19 +18,32 @@ const cached: MongooseCache =
 
 global.mongooseCache = cached;
 
+function getMongoUri() {
+  const raw = process.env.MONGODB_URI?.trim();
+
+  if (!raw) {
+    throw new Error("MONGODB_URI no está configurada.");
+  }
+
+  // Evita errores comunes al copiar una URI a Vercel con comillas alrededor.
+  const uri = raw.replace(/^(['"])|(['"])$/g, "");
+
+  if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
+    throw new Error(
+      'MONGODB_URI debe comenzar exactamente con "mongodb://" o "mongodb+srv://". Revisa la variable en Vercel.',
+    );
+  }
+
+  return uri;
+}
+
 export async function connectMongoDB() {
   if (cached.conn) {
     return cached.conn;
   }
 
-  const mongoUri = process.env.MONGODB_URI;
-
-  if (!mongoUri) {
-    throw new Error("Define MONGODB_URI en las variables de entorno.");
-  }
-
   if (!cached.promise) {
-    cached.promise = mongoose.connect(mongoUri, {
+    cached.promise = mongoose.connect(getMongoUri(), {
       bufferCommands: false,
     });
   }
