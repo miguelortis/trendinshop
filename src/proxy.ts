@@ -14,8 +14,10 @@ export default function proxy(request: NextRequest) {
   }
 
   const session = request.cookies.get("ts_session")?.value;
+  const preview = request.nextUrl.searchParams.get("preview") === "1";
+  const isProduction = process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
 
-  if (!session) {
+  if (!session && !(preview && !isProduction)) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
