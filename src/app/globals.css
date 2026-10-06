@@ -335,3 +335,26 @@ button, input, select, textarea { font: inherit; }
   .quick-grid { grid-template-columns:1fr 1fr; }
   .auth-card { padding:27px 20px; border-radius:18px; }
 }
+
+.auth-error {
+  margin-top: 18px;
+  padding: 11px 12px;
+  border: 1px solid #fecdca;
+  border-radius: 11px;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.auth-submit:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+.field input:disabled,.field select:disabled {
+  cursor: not-allowed;
+  background: #f9fafb;
+}
+.collapse-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
