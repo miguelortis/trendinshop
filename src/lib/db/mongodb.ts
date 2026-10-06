@@ -1,11 +1,5 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error("Define MONGODB_URI en las variables de entorno.");
-}
-
 type MongooseCache = {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
@@ -16,20 +10,45 @@ declare global {
   var mongooseCache: MongooseCache | undefined;
 }
 
-const cached = global.mongooseCache ?? {
-  conn: null,
-  promise: null,
-};
+const cached: MongooseCache =
+  global.mongooseCache ?? {
+    conn: null,
+    promise: null,
+  };
 
 global.mongooseCache = cached;
+
+function requireMongoUri(): string {
+  const value = process.env.MONGODB_URI;
+
+  if (typeof value !== "string") {
+    throw new Error("MONGODB_URI no está configurada.");
+  }
+
+  const uri = value.trim().replace(/^['"]|['"]$/g, "");
+
+  if (!uri) {
+    throw new Error("MONGODB_URI no puede estar vacía.");
+  }
+
+  if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
+    throw new Error(
+      'MONGODB_URI debe comenzar exactamente con "mongodb://" o "mongodb+srv://". Revisa la variable en Vercel.',
+    );
+  }
+
+  return uri;
+}
 
 export async function connectMongoDB() {
   if (cached.conn) {
     return cached.conn;
   }
 
+  const mongoUri: string = requireMongoUri();
+
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
+    cached.promise = mongoose.connect(mongoUri, {
       bufferCommands: false,
     });
   }
