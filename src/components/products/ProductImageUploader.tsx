@@ -157,7 +157,10 @@ export function ProductImageUploader({
   }
 
   function handlePaste(event: ClipboardEvent) {
-    const files = Array.from(event.clipboardData.files ?? []);
+    const clipboardData = event.clipboardData;
+    if (!clipboardData) return;
+
+    const files = Array.from(clipboardData.files);
     if (!files.length) return;
 
     event.preventDefault();
