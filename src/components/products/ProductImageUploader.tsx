@@ -101,6 +101,7 @@ export function ProductImageUploader({
     }
 
     setError("");
+    let workingItems = [...items];
 
     for (const file of imageFiles) {
       const id = crypto.randomUUID();
@@ -117,7 +118,8 @@ export function ProductImageUploader({
         uploading: true,
       };
 
-      const withUploading = [...items, uploadingItem];
+      const withUploading = [...workingItems, uploadingItem];
+      workingItems = withUploading;
       emit(withUploading);
 
       try {
@@ -134,7 +136,7 @@ export function ProductImageUploader({
           },
         });
 
-        const current = items.filter((item) => item.id !== id);
+        const current = workingItems.filter((item) => item.id !== id);
         const uploaded: ImageItem = {
           ...uploadingItem,
           url: blob.url,
@@ -143,17 +145,13 @@ export function ProductImageUploader({
         };
 
         const next = ensurePrimary([...current, uploaded]);
+        workingItems = next;
         if (localPreview) URL.revokeObjectURL(localPreview);
         emit(next);
       } catch (uploadError) {
         if (localPreview) URL.revokeObjectURL(localPreview);
-        setItems((current) => current.filter((item) => item.id !== id));
-        onChange(
-          items
-            .filter((item) => item.id !== id)
-            .filter((item) => item.url)
-            .map(({ url, alt, isPrimary }) => ({ url, alt, isPrimary })),
-        );
+        workingItems = workingItems.filter((item) => item.id !== id);
+        emit(ensurePrimary(workingItems));
         console.error(uploadError);
         setError("No pudimos subir " + file.name + ".");
       }
