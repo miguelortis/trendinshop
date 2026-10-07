@@ -8,13 +8,17 @@ export type SessionPayload = JWTPayload & {
 };
 
 function getAuthSecret() {
-  const secret = process.env.AUTH_SECRET;
+  const secret = process.env.AUTH_SECRET?.trim();
 
   if (!secret || secret.length < 32) {
     throw new Error("AUTH_SECRET debe existir y tener al menos 32 caracteres.");
   }
 
   return new TextEncoder().encode(secret);
+}
+
+export function assertAuthConfiguration() {
+  getAuthSecret();
 }
 
 export async function createSessionToken(
