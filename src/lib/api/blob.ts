@@ -1,4 +1,5 @@
-import { del, handleUpload, type HandleUploadBody, put } from "@vercel/blob";
+import { del, put } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 
