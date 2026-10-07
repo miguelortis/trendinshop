@@ -4,6 +4,7 @@ const productImageSchema = new Schema(
   {
     url: { type: String, required: true, trim: true },
     alt: { type: String, trim: true, default: "" },
+    isPrimary: { type: Boolean, default: false, required: true },
   },
   { _id: false },
 );
@@ -15,6 +16,7 @@ const productSchema = new Schema(
     description: { type: String, trim: true, default: "" },
     categoryId: { type: Schema.Types.ObjectId, ref: "Category", required: true, index: true },
     sku: { type: String, required: true, trim: true, uppercase: true, unique: true, index: true },
+    purchasePrice: { type: Number, required: true, min: 0 },
     wholesalePrice: { type: Number, required: true, min: 0 },
     images: { type: [productImageSchema], default: [] },
     isActive: { type: Boolean, default: true, required: true, index: true },
