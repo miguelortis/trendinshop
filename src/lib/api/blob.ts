@@ -16,6 +16,23 @@ function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
   return NextResponse.json({ ok: false, error: code, message }, { status });
 }
 
+function getBlobFailureMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : "";
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("token") ||
+    normalized.includes("access denied") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("forbidden") ||
+    normalized.includes("blob store")
+  ) {
+    return "Vercel Blob no está conectado o autorizado para este entorno de Vercel.";
+  }
+
+  return fallback;
+}
+
 function isAllowedBlobUrl(value: string) {
   try {
     const url = new URL(value);
@@ -76,7 +93,11 @@ export async function prepareBlobUpload(request: Request) {
     return NextResponse.json(jsonResponse);
   } catch (error) {
     console.error("[BLOB_UPLOAD]", error);
-    return errorResponse("No pudimos preparar la subida de la imagen.", 500, "UPLOAD_ERROR");
+    return errorResponse(
+      getBlobFailureMessage(error, "No pudimos preparar la subida de la imagen."),
+      500,
+      "UPLOAD_ERROR",
+    );
   }
 }
 
@@ -135,7 +156,11 @@ export async function importImageFromUrl(request: Request) {
     return NextResponse.json({ ok: true, blob });
   } catch (error) {
     console.error("[BLOB_IMPORT_URL]", error);
-    return errorResponse("No pudimos importar esa imagen.", 500, "IMPORT_ERROR");
+    return errorResponse(
+      getBlobFailureMessage(error, "No pudimos importar esa imagen."),
+      500,
+      "IMPORT_ERROR",
+    );
   }
 }
 
