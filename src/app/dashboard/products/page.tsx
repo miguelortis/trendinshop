@@ -13,6 +13,7 @@ type Product = {
   title: string;
   sku: string;
   description?: string;
+  purchasePrice: number;
   wholesalePrice: number;
   images?: { url: string; alt?: string }[];
   categoryId?: { _id: string; name: string; slug: string } | string;
@@ -153,9 +154,23 @@ export default function ProductsPage() {
                   <span className="product-category">{category}</span>
                   <h2>{product.title}</h2>
                   <div className="product-sku">SKU {product.sku}</div>
-                  <div className="product-card-footer">
-                    <strong>{"$"}{product.wholesalePrice.toFixed(2)}</strong>
-                    <span>Mayorista</span>
+                  <div className="product-card-footer product-card-financials">
+                    <div>
+                      <span>Compra</span>
+                      <strong>{"$"}{product.purchasePrice.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Mayorista</span>
+                      <strong>{"$"}{product.wholesalePrice.toFixed(2)}</strong>
+                    </div>
+                    {isAdmin ? (
+                      <div>
+                        <span>Ganancia</span>
+                        <strong className="profit-value">
+                          {"$"}{Math.max(0, product.wholesalePrice - product.purchasePrice).toFixed(2)}
+                        </strong>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </article>
