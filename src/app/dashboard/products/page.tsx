@@ -15,7 +15,7 @@ type Product = {
   description?: string;
   purchasePrice: number;
   wholesalePrice: number;
-  images?: { url: string; alt?: string }[];
+  images?: { url: string; alt?: string; isPrimary?: boolean }[];
   categoryId?: { _id: string; name: string; slug: string } | string;
 };
 
