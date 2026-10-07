@@ -9,6 +9,7 @@ import { createCategory, listCategories, listProducts } from "@/lib/api/catalog"
 import { createProduct } from "@/lib/api/products";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { bootstrapAdmin } from "@/lib/api/setup";
+import { deleteBlob, importImageFromUrl, prepareBlobUpload } from "@/lib/api/blob";
 
 type RouteContext = {
   method: string;
@@ -61,6 +62,12 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
 
   if (resource === "setup" && action === "admin" && method === "POST") {
     return bootstrapAdmin(request);
+  }
+
+  if (resource === "blob") {
+    if (action === "upload" && method === "POST") return prepareBlobUpload(request);
+    if (action === "import" && method === "POST") return importImageFromUrl(request);
+    if (action === "delete" && method === "POST") return deleteBlob(request);
   }
 
   return Response.json(
