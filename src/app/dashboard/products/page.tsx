@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FolderPlus, Package, Plus, Search, Tag } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -52,7 +52,7 @@ export default function ProductsPage() {
     );
   }, [products.data, search]);
 
-  async function handleCreateCategory(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCategoryError("");
     setCategorySaving(true);
