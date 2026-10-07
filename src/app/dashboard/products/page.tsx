@@ -143,7 +143,7 @@ export default function ProductsPage() {
         ) : filteredProducts.length ? (
           filteredProducts.map((product) => {
             const category = typeof product.categoryId === "object" ? product.categoryId?.name : "Sin categoría";
-            const image = product.images?.[0]?.url;
+            const image = product.images?.find((item) => item.isPrimary)?.url ?? product.images?.[0]?.url;
 
             return (
               <article className="product-card" key={product._id}>
