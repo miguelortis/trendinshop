@@ -1,4 +1,5 @@
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
+import { connectMongoDB } from "@/lib/db/mongodb";
 import { UserModel } from "@/models/User";
 
 export type AuthContextUser = {
@@ -23,6 +24,7 @@ export async function getAuthenticatedUser(request: Request): Promise<AuthContex
 
   try {
     const payload = await verifySessionToken(decodeURIComponent(token));
+    await connectMongoDB();
     const user = await UserModel.findById(payload.sub).exec();
 
     if (!user || !user.isActive) return null;
