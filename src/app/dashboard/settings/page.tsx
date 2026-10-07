@@ -2,7 +2,7 @@
 
 import { ShieldCheck, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -14,7 +14,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function handleBootstrap(event: React.FormEvent<HTMLFormElement>) {
+  async function handleBootstrap(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setMessage("");
