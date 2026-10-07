@@ -14,6 +14,7 @@ const productVariantSchema = new Schema(
     label: { type: String, required: true, trim: true },
     options: { type: [variantOptionSchema], default: [] },
     sku: { type: String, required: true, trim: true, uppercase: true, unique: true, index: true },
+    purchasePrice: { type: Number, min: 0, default: null },
     wholesalePrice: { type: Number, min: 0, default: null },
     stock: { type: Number, min: 0, default: 0, required: true },
     lowStockThreshold: { type: Number, min: 0, default: 3, required: true },
