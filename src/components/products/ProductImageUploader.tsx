@@ -139,7 +139,22 @@ export function ProductImageUploader({
         workingItems = workingItems.filter((item) => item.id !== id);
         emit(ensurePrimary(workingItems));
         console.error(uploadError);
-        setError("No pudimos subir " + file.name + ".");
+
+        const message =
+          uploadError instanceof Error ? uploadError.message.toLowerCase() : "";
+
+        if (
+          message.includes("client token") ||
+          message.includes("access denied") ||
+          message.includes("unauthorized") ||
+          message.includes("forbidden")
+        ) {
+          setError(
+            "Vercel Blob no está conectado o autorizado para este entorno de Vercel.",
+          );
+        } else {
+          setError("No pudimos subir " + file.name + ".");
+        }
       }
     }
   }
