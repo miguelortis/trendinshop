@@ -56,20 +56,6 @@ export function ProductImageUploader({
   const [preview, setPreview] = useState<ImageItem | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const serialized = JSON.stringify(items.map(({ url, alt, isPrimary }) => ({ url, alt, isPrimary })));
-    const incoming = JSON.stringify(value);
-    if (serialized !== incoming) {
-      setItems(
-        value.map((image, index) => ({
-          ...image,
-          id: image.url + "-" + index,
-          name: "Imagen",
-        })),
-      );
-    }
-  }, [value]);
-
   function emit(next: ImageItem[]) {
     setItems(next);
     onChange(
