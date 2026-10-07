@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -65,7 +65,7 @@ export default function NewProductPage() {
     );
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setSaving(true);
