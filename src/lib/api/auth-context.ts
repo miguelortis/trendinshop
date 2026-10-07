@@ -23,7 +23,7 @@ export async function getAuthenticatedUser(request: Request): Promise<AuthContex
 
   try {
     const payload = await verifySessionToken(decodeURIComponent(token));
-    const user = await UserModel.findById(payload.sub).lean();
+    const user = await UserModel.findById(payload.sub).exec();
 
     if (!user || !user.isActive) return null;
 
