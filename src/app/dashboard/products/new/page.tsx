@@ -10,14 +10,15 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type Category = { _id: string; name: string };
 
+type VariantOptionInput = { name: string; value: string };
+
 type ProductVariantInput = {
   label: string;
   sku: string;
   wholesalePrice: string;
   stock: string;
   lowStockThreshold: string;
-  optionName: string;
-  optionValue: string;
+  options: VariantOptionInput[];
 };
 
 const blankVariant = (): ProductVariantInput => ({
@@ -26,8 +27,7 @@ const blankVariant = (): ProductVariantInput => ({
   wholesalePrice: "",
   stock: "0",
   lowStockThreshold: "3",
-  optionName: "",
-  optionValue: "",
+  options: [{ name: "", value: "" }],
 });
 
 export default function NewProductPage() {
@@ -57,10 +57,53 @@ export default function NewProductPage() {
     setVariants((current) => [...current, blankVariant()]);
   }
 
-  function updateVariant(index: number, key: keyof ProductVariantInput, value: string) {
+  function updateVariant(index: number, key: keyof Omit<ProductVariantInput, "options">, value: string) {
     setVariants((current) =>
       current.map((variant, variantIndex) =>
         variantIndex === index ? { ...variant, [key]: value } : variant,
+      ),
+    );
+  }
+
+  function updateOption(
+    variantIndex: number,
+    optionIndex: number,
+    key: keyof VariantOptionInput,
+    value: string,
+  ) {
+    setVariants((current) =>
+      current.map((variant, currentVariantIndex) =>
+        currentVariantIndex !== variantIndex
+          ? variant
+          : {
+              ...variant,
+              options: variant.options.map((option, currentOptionIndex) =>
+                currentOptionIndex === optionIndex ? { ...option, [key]: value } : option,
+              ),
+            },
+      ),
+    );
+  }
+
+  function addOption(variantIndex: number) {
+    setVariants((current) =>
+      current.map((variant, currentVariantIndex) =>
+        currentVariantIndex === variantIndex
+          ? { ...variant, options: [...variant.options, { name: "", value: "" }] }
+          : variant,
+      ),
+    );
+  }
+
+  function removeOption(variantIndex: number, optionIndex: number) {
+    setVariants((current) =>
+      current.map((variant, currentVariantIndex) =>
+        currentVariantIndex === variantIndex
+          ? {
+              ...variant,
+              options: variant.options.filter((_, currentOptionIndex) => currentOptionIndex !== optionIndex),
+            }
+          : variant,
       ),
     );
   }
@@ -86,10 +129,7 @@ export default function NewProductPage() {
           wholesalePrice: variant.wholesalePrice,
           stock: variant.stock,
           lowStockThreshold: variant.lowStockThreshold,
-          options:
-            variant.optionName && variant.optionValue
-              ? [{ name: variant.optionName, value: variant.optionValue }]
-              : [],
+          options: variant.options.filter((option) => option.name.trim() && option.value.trim()),
         })),
       });
 
@@ -226,15 +266,37 @@ export default function NewProductPage() {
                       </label>
                     </div>
 
-                    <div className="form-grid two">
-                      <label className="field">
-                        <span>Tipo de opción</span>
-                        <input value={variant.optionName} onChange={(event) => updateVariant(index, "optionName", event.target.value)} placeholder="Color" />
-                      </label>
-                      <label className="field">
-                        <span>Valor</span>
-                        <input value={variant.optionValue} onChange={(event) => updateVariant(index, "optionValue", event.target.value)} placeholder="Negro" />
-                      </label>
+                    <div className="variant-options-header">
+                      <span>Opciones</span>
+                      <button type="button" className="text-button" onClick={() => addOption(index)}>
+                        <Plus size={14} /> Agregar opción
+                      </button>
+                    </div>
+                    <div className="variant-options-list">
+                      {variant.options.map((option, optionIndex) => (
+                        <div className="variant-option-row" key={optionIndex}>
+                          <input
+                            value={option.name}
+                            onChange={(event) => updateOption(index, optionIndex, "name", event.target.value)}
+                            placeholder="Color / Talla / Material"
+                          />
+                          <input
+                            value={option.value}
+                            onChange={(event) => updateOption(index, optionIndex, "value", event.target.value)}
+                            placeholder="Negro / M / Cuero"
+                          />
+                          {variant.options.length > 1 ? (
+                            <button
+                              type="button"
+                              className="icon-button danger-icon"
+                              onClick={() => removeOption(index, optionIndex)}
+                              aria-label="Eliminar opción"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
 
                     <div className="form-grid three">
