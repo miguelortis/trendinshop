@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectMongoDB } from "@/lib/db/mongodb";
-import { createSessionToken, SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
+import { assertAuthConfiguration, createSessionToken, SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { UserModel } from "@/models/User";
 
@@ -93,6 +93,7 @@ export async function registerUser(request: Request) {
       return errorResponse("Selecciona un género válido.");
     }
 
+    assertAuthConfiguration();
     await connectMongoDB();
 
     const [emailExists, documentExists] = await Promise.all([
@@ -117,18 +118,27 @@ export async function registerUser(request: Request) {
       isActive: true,
     });
 
-    const token = await createSessionToken({ id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" }, true);
-    const response = NextResponse.json(
+    try {
+      const token = await createSessionToken(
+        { id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" },
+        true,
+      );
+
+      const response = NextResponse.json(
       { ok: true, user: publicUser(user), message: "Cuenta creada correctamente." },
-      { status: 201 },
-    );
+        { status: 201 },
+      );
 
-    response.cookies.set(SESSION_COOKIE_NAME, token, {
-      ...COOKIE_BASE,
-      maxAge: 60 * 60 * 24 * 30,
-    });
+      response.cookies.set(SESSION_COOKIE_NAME, token, {
+        ...COOKIE_BASE,
+        maxAge: 60 * 60 * 24 * 30,
+      });
 
-    return response;
+      return response;
+    } catch (sessionError) {
+      await UserModel.deleteOne({ _id: user._id });
+      throw sessionError;
+    }
   } catch (error) {
     console.error("[AUTH_REGISTER]", error);
     return errorResponse("No pudimos crear la cuenta. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
