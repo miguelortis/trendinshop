@@ -1124,3 +1124,27 @@ button, input, select, textarea { font: inherit; }
   .pricing-result > div:first-child { grid-column: auto; }
   .image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+.product-card-financials {
+  align-items: flex-end;
+  gap: 8px;
+}
+.product-card-financials > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.product-card-financials > div + div {
+  padding-left: 8px;
+  border-left: 1px solid #eef0f4;
+}
+.product-card-financials span {
+  color: #98a2b3;
+  font-size: 8px;
+}
+.product-card-financials strong {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.product-card-financials .profit-value { color: #027a48; }
