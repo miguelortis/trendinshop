@@ -716,3 +716,49 @@ button, input, select, textarea { font: inherit; }
 @media (max-width: 800px) {
   .settings-grid { grid-template-columns: 1fr; }
 }
+
+
+.variant-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 1px 0 8px;
+  color: #475467;
+  font-size: 10px;
+  font-weight: 800;
+}
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6941c6;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.variant-options-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.variant-option-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 34px;
+  gap: 7px;
+  align-items: center;
+}
+.variant-option-row input {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  outline: 0;
+  font-size: 10px;
+  color: #101828;
+  background: #fff;
+}
+.variant-option-row input:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139,92,246,.12);
+}
