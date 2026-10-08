@@ -6,7 +6,7 @@ import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const PENDING_IMAGE_PREFIX = "pending/products/";
-const PENDING_IMAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const PENDING_IMAGE_MAX_AGE_MS = 72 * 60 * 60 * 1000;
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
