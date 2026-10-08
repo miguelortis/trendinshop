@@ -36,6 +36,9 @@ type ProductImageUploaderProps = {
 };
 
 const MAX_IMAGES = 12;
+const MAX_IMAGE_DIMENSION = 1600;
+const WEBP_QUALITY = 0.84;
+const OPTIMIZE_THRESHOLD = 450 * 1024;
 
 export function ProductImageUploader({
   value,
@@ -73,6 +76,64 @@ export function ProductImageUploader({
     }));
   }
 
+  async function optimizeImage(file: File): Promise<File> {
+    // Keep animated GIFs intact. Other supported images are converted to WebP
+    // when they are large enough to benefit from optimization.
+    if (file.type === "image/gif") return file;
+
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      const image = new Image();
+
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("No pudimos leer la imagen."));
+        image.src = objectUrl;
+      });
+
+      const largestSide = Math.max(image.naturalWidth, image.naturalHeight);
+      const needsResize = largestSide > MAX_IMAGE_DIMENSION;
+      const needsCompression = file.size > OPTIMIZE_THRESHOLD;
+
+      if (!needsResize && !needsCompression && file.type === "image/webp") {
+        return file;
+      }
+
+      const scale = needsResize ? MAX_IMAGE_DIMENSION / largestSide : 1;
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d");
+      if (!context) return file;
+
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(image, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", WEBP_QUALITY),
+      );
+
+      if (!blob) return file;
+
+      return new File(
+        [blob],
+        file.name.replace(/\.[^.]+$/, "") + ".webp",
+        {
+          type: "image/webp",
+          lastModified: Date.now(),
+        },
+      );
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   async function uploadFiles(files: File[]) {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
 
@@ -91,7 +152,8 @@ export function ProductImageUploader({
 
     for (const file of imageFiles) {
       const id = crypto.randomUUID();
-      const localPreview = URL.createObjectURL(file);
+      let uploadFile = file;
+      let localPreview = URL.createObjectURL(file);
 
       const uploadingItem: ImageItem = {
         id,
@@ -109,7 +171,20 @@ export function ProductImageUploader({
       emit(withUploading);
 
       try {
-        const blob = await upload(file.name, file, {
+        uploadFile = await optimizeImage(file);
+
+        if (uploadFile !== file) {
+          URL.revokeObjectURL(localPreview);
+          localPreview = URL.createObjectURL(uploadFile);
+
+          const optimizedItem = workingItems.map((item) =>
+            item.id === id ? { ...item, localPreview, name: uploadFile.name } : item,
+          );
+          workingItems = optimizedItem;
+          emit(optimizedItem);
+        }
+
+        const blob = await upload(uploadFile.name, uploadFile, {
           access: "public",
           handleUploadUrl: "/api/blob/upload",
           clientPayload: JSON.stringify({ purpose: "product-image" }),
@@ -366,7 +441,7 @@ export function ProductImageUploader({
 
       <div className="image-uploader-meta">
         <span>{items.length}/{maxImages} imágenes</span>
-        <span>JPG, PNG, WEBP, GIF o AVIF · máximo 10 MB cada una</span>
+        <span>Se optimizan automáticamente a WebP cuando conviene · máximo 10 MB de entrada</span>
       </div>
 
       {preview ? (
