@@ -201,6 +201,9 @@ export function ProductImageUploader({
         const uploaded: ImageItem = {
           ...uploadingItem,
           url: blob.url,
+          // Once the upload finishes, render the real Blob URL instead of
+          // the temporary object URL (which is revoked below).
+          localPreview: undefined,
           progress: 100,
           uploading: false,
         };
