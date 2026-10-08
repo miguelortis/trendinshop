@@ -277,6 +277,27 @@ export async function cleanupPendingProductImages(
   return deleted;
 }
 
+export async function cleanupCurrentUserPendingImages(request: Request) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) return unauthorized();
+
+  try {
+    const deleted = await cleanupPendingProductImagesForUser(user.id);
+
+    return NextResponse.json({
+      ok: true,
+      deleted,
+    });
+  } catch (error) {
+    console.error("[BLOB_PENDING_CLEANUP]", error);
+    return errorResponse(
+      "No pudimos limpiar las imágenes temporales.",
+      500,
+      "CLEANUP_ERROR",
+    );
+  }
+}
+
 export async function deleteBlob(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) return unauthorized();
