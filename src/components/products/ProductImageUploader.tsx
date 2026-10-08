@@ -78,7 +78,7 @@ export function ProductImageUploader({
 
   async function optimizeImage(file: File): Promise<File> {
     // Keep animated GIFs intact. Other supported images are converted to WebP
-    // when they are large enough to benefit from optimization.
+    // when it reduces bandwidth or the source image needs resizing.
     if (file.type === "image/gif") return file;
 
     const objectUrl = URL.createObjectURL(file);
@@ -119,7 +119,7 @@ export function ProductImageUploader({
         canvas.toBlob(resolve, "image/webp", WEBP_QUALITY),
       );
 
-      if (!blob) return file;
+      if (!blob || blob.size >= file.size) return file;
 
       return new File(
         [blob],
