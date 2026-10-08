@@ -1,3 +1,4 @@
+import { copy, del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CategoryModel } from "@/models/Category";
@@ -5,6 +6,7 @@ import { InventoryMovementModel } from "@/models/InventoryMovement";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import mongoose from "mongoose";
+import { isPendingProductImageUrl } from "@/lib/api/blob";
 
 function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
   return NextResponse.json({ ok: false, error: code, message }, { status });
@@ -84,6 +86,61 @@ function parseImages(value: unknown, title: string) {
     ...image,
     isPrimary: primaryIndex >= 0 ? index === primaryIndex : index === 0,
   }));
+}
+
+async function promoteProductImages(
+  images: { url: string; alt: string; isPrimary: boolean }[],
+  userId: string,
+  productId: string,
+) {
+  if (!images.length) {
+    return { images: [], pendingUrls: [], permanentUrls: [] };
+  }
+
+  const promoted: { url: string; alt: string; isPrimary: boolean }[] = [];
+  const pendingUrls: string[] = [];
+  const permanentUrls: string[] = [];
+
+  try {
+    for (const [index, image] of images.entries()) {
+      if (!isPendingProductImageUrl(image.url, userId)) {
+        throw new Error("INVALID_PENDING_PRODUCT_IMAGE");
+      }
+
+      const sourceUrl = new URL(image.url);
+      const pathname = decodeURIComponent(sourceUrl.pathname).replace(/^\/+/, "");
+      const filename = pathname.split("/").pop() || "image-" + (index + 1) + ".webp";
+      const destination = "products/" + userId + "/" + productId + "/" + filename;
+
+      const copied = await copy(image.url, destination, {
+        access: "public",
+        addRandomSuffix: true,
+      });
+
+      promoted.push({
+        ...image,
+        url: copied.url,
+      });
+      pendingUrls.push(image.url);
+      permanentUrls.push(copied.url);
+    }
+
+    return {
+      images: promoted,
+      pendingUrls,
+      permanentUrls,
+    };
+  } catch (error) {
+    if (permanentUrls.length) {
+      try {
+        await del(permanentUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_IMAGE_PROMOTION_CLEANUP]", cleanupError);
+      }
+    }
+
+    throw error;
+  }
 }
 
 function parseVariants(value: unknown) {
@@ -288,7 +345,15 @@ export async function createProduct(
       );
     }
 
+    const productId = new mongoose.Types.ObjectId();
+    const promotedImages = await promoteProductImages(
+      images,
+      userId,
+      productId.toString(),
+    );
+
     const product = await ProductModel.create({
+      _id: productId,
       title,
       slug,
       description,
@@ -296,7 +361,7 @@ export async function createProduct(
       sku,
       purchasePrice,
       wholesalePrice,
-      images,
+      images: promotedImages.images,
       isActive: true,
       createdBy: userId,
     });
@@ -330,6 +395,14 @@ export async function createProduct(
         await InventoryMovementModel.insertMany(initialMovements);
       }
 
+      if (promotedImages.pendingUrls.length) {
+        try {
+          await del(promotedImages.pendingUrls);
+        } catch (cleanupError) {
+          console.error("[PRODUCT_PENDING_IMAGE_CLEANUP]", cleanupError);
+        }
+      }
+
       return NextResponse.json(
         {
           ok: true,
@@ -342,6 +415,15 @@ export async function createProduct(
     } catch (variantError) {
       await ProductVariantModel.deleteMany({ productId: product._id });
       await ProductModel.deleteOne({ _id: product._id });
+
+      if (promotedImages.permanentUrls.length) {
+        try {
+          await del(promotedImages.permanentUrls);
+        } catch (cleanupError) {
+          console.error("[PRODUCT_IMAGE_ROLLBACK_CLEANUP]", cleanupError);
+        }
+      }
+
       throw variantError;
     }
   } catch (error) {
