@@ -19,7 +19,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zustand": "^5.0.8",
-    "@vercel/blob": "^2.4.0"
+    "@vercel/blob": "^2.4.0",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
