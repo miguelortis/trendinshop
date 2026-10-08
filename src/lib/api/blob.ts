@@ -217,6 +217,37 @@ export function isPendingProductImageUrl(value: string, userId: string) {
   }
 }
 
+export async function cleanupPendingProductImagesForUser(
+  userId: string,
+  maxAgeMs = PENDING_IMAGE_MAX_AGE_MS,
+) {
+  const prefix = PENDING_IMAGE_PREFIX + userId + "/";
+  const cutoff = Date.now() - maxAgeMs;
+  let cursor: string | undefined;
+  let deleted = 0;
+
+  do {
+    const result = await list({
+      prefix,
+      limit: 1000,
+      ...(cursor ? { cursor } : {}),
+    });
+
+    const expired = result.blobs.filter(
+      (blob) => new Date(blob.uploadedAt).getTime() < cutoff,
+    );
+
+    if (expired.length) {
+      await del(expired.map((blob) => blob.url));
+      deleted += expired.length;
+    }
+
+    cursor = result.hasMore ? result.cursor : undefined;
+  } while (cursor);
+
+  return deleted;
+}
+
 export async function cleanupPendingProductImages(
   maxAgeMs = PENDING_IMAGE_MAX_AGE_MS,
 ) {
