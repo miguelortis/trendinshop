@@ -1,5 +1,6 @@
 import { del, put } from "@vercel/blob";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 
@@ -140,15 +141,39 @@ export async function importImageFromUrl(request: Request) {
       return errorResponse("La imagen supera el máximo de 10 MB.", 400, "IMAGE_TOO_LARGE");
     }
 
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_IMAGE_SIZE) {
+    const originalBuffer = Buffer.from(await response.arrayBuffer());
+    if (originalBuffer.byteLength > MAX_IMAGE_SIZE) {
       return errorResponse("La imagen supera el máximo de 10 MB.", 400, "IMAGE_TOO_LARGE");
     }
 
-    const extension = contentType.split("/")[1] || "jpg";
+    let uploadBuffer = originalBuffer;
+    let uploadContentType = contentType;
+    let extension = contentType.split("/")[1] || "jpg";
+
+    // Optimize remote product images on the server as well, so URL imports
+    // receive the same mobile-friendly treatment as local/pasted images.
+    if (contentType !== "image/gif") {
+      const optimizedBuffer = await sharp(originalBuffer)
+        .rotate()
+        .resize({
+          width: 1600,
+          height: 1600,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 84 })
+        .toBuffer();
+
+      if (optimizedBuffer.length < originalBuffer.length) {
+        uploadBuffer = optimizedBuffer;
+        uploadContentType = "image/webp";
+        extension = "webp";
+      }
+    }
+
     const pathname = "products/" + user.id + "/imported-" + Date.now() + "." + extension;
 
-    const blob = await put(pathname, new Blob([buffer], { type: contentType }), {
+    const blob = await put(pathname, new Blob([uploadBuffer], { type: uploadContentType }), {
       access: "public",
       addRandomSuffix: true,
     });
