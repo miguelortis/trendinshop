@@ -148,7 +148,16 @@ export default function ProductsPage() {
             return (
               <article className="product-card" key={product._id}>
                 <div className="product-card-image">
-                  {image ? <img src={image} alt={product.images?.[0]?.alt || product.title} /> : <Package size={30} />}
+                  {image ? (
+                    <img
+                      src={image}
+                      alt={product.images?.find((item) => item.isPrimary)?.alt || product.images?.[0]?.alt || product.title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <Package size={30} />
+                  )}
                 </div>
                 <div className="product-card-body">
                   <span className="product-category">{category}</span>
