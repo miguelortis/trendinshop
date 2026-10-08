@@ -265,6 +265,10 @@ export function ProductImageUploader({
     return () => document.removeEventListener("paste", handlePaste);
   });
 
+  useEffect(() => {
+    void api.post("/blob/cleanup-pending").catch(() => undefined);
+  }, []);
+
   async function importFromUrl(event: FormEvent) {
     event.preventDefault();
 
