@@ -1,10 +1,12 @@
-import { del, put } from "@vercel/blob";
+import { del, list, put } from "@vercel/blob";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const PENDING_IMAGE_PREFIX = "pending/products/";
+const PENDING_IMAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
@@ -83,7 +85,7 @@ export async function prepareBlobUpload(request: Request) {
       onBeforeGenerateToken: async (pathname) => {
         const safePathname = pathname.replace(/[^a-zA-Z0-9._/-]/g, "_");
         return {
-          pathname: "products/" + user.id + "/" + safePathname,
+          pathname: PENDING_IMAGE_PREFIX + user.id + "/" + safePathname,
           allowedContentTypes: ALLOWED_IMAGE_TYPES,
           maximumSizeInBytes: MAX_IMAGE_SIZE,
           addRandomSuffix: true,
@@ -171,7 +173,8 @@ export async function importImageFromUrl(request: Request) {
       }
     }
 
-    const pathname = "products/" + user.id + "/imported-" + Date.now() + "." + extension;
+    const pathname =
+      PENDING_IMAGE_PREFIX + user.id + "/imported-" + Date.now() + "." + extension;
 
     const blob = await put(pathname, new Blob([uploadBuffer], { type: uploadContentType }), {
       access: "public",
@@ -187,6 +190,60 @@ export async function importImageFromUrl(request: Request) {
       "IMPORT_ERROR",
     );
   }
+}
+
+export function isPendingProductImageUrl(value: string, userId: string) {
+  try {
+    const url = new URL(value);
+
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:"
+    ) {
+      return false;
+    }
+
+    if (
+      !url.hostname.endsWith("vercel-storage.com") &&
+      !url.hostname.endsWith("blob.vercel-storage.com")
+    ) {
+      return false;
+    }
+
+    const pathname = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+    return pathname.startsWith(PENDING_IMAGE_PREFIX + userId + "/");
+  } catch {
+    return false;
+  }
+}
+
+export async function cleanupPendingProductImages(
+  maxAgeMs = PENDING_IMAGE_MAX_AGE_MS,
+) {
+  const cutoff = Date.now() - maxAgeMs;
+  let cursor: string | undefined;
+  let deleted = 0;
+
+  do {
+    const result = await list({
+      prefix: PENDING_IMAGE_PREFIX,
+      limit: 1000,
+      ...(cursor ? { cursor } : {}),
+    });
+
+    const expired = result.blobs.filter(
+      (blob) => new Date(blob.uploadedAt).getTime() < cutoff,
+    );
+
+    if (expired.length) {
+      await del(expired.map((blob) => blob.url));
+      deleted += expired.length;
+    }
+
+    cursor = result.hasMore ? result.cursor : undefined;
+  } while (cursor);
+
+  return deleted;
 }
 
 export async function deleteBlob(request: Request) {
