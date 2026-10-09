@@ -112,7 +112,7 @@ export async function getProductById(id: string, userRole: string) {
     }
 
     const variants = await ProductVariantModel.find({
-      productId: product._id,
+      productId: new mongoose.Types.ObjectId(id),
       isActive: true,
     })
       .sort({ createdAt: 1 })
