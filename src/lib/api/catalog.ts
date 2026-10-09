@@ -103,16 +103,17 @@ export async function getProductById(id: string, userRole: string) {
   try {
     await connectMongoDB();
 
-    const product = await ProductModel.findOne({ _id: id, isActive: true })
+    const productDocument = await ProductModel.findOne({ _id: id, isActive: true })
       .populate("categoryId", "name slug description")
-      .lean();
+      .exec();
 
-    if (!product) {
+    if (!productDocument) {
       return errorResponse("No encontramos ese producto.", 404, "PRODUCT_NOT_FOUND");
     }
 
+    const product = productDocument.toObject();
     const variants = await ProductVariantModel.find({
-      productId: new mongoose.Types.ObjectId(id),
+      productId: productDocument._id,
       isActive: true,
     })
       .sort({ createdAt: 1 })
