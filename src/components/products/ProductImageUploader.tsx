@@ -307,7 +307,7 @@ export function ProductImageUploader({
 
   function isPendingBlobUrl(value: string) {
     try {
-      const pathname = decodeURIComponent(new URL(value).pathname).replace(/^\\/+/, "");
+      const pathname = decodeURIComponent(new URL(value).pathname).replace(/^\/+/, "");
       return pathname.startsWith("pending/products/");
     } catch {
       return false;
