@@ -71,21 +71,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="app-nav">
-          {navSections.map((section) => (
-            <div key={section.label} className="app-nav-section">
-              {!collapsed && <div className="app-nav-label">{section.label}</div>}
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
-                return (
-                  <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined} className={active ? "app-nav-item active" : "app-nav-item"}>
-                    <Icon size={18} strokeWidth={active ? 2.25 : 2} />
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+          {navSections.map((section) => {
+            const visibleItems = section.items.filter(
+              (item) => !(item.href === "/dashboard/catalog" && user?.role === "ADMIN"),
+            );
+            if (!visibleItems.length) return null;
+
+            return (
+              <div key={section.label} className="app-nav-section">
+                {!collapsed && <div className="app-nav-label">{section.label}</div>}
+                {visibleItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
+                  return (
+                    <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined} className={active ? "app-nav-item active" : "app-nav-item"}>
+                      <Icon size={18} strokeWidth={active ? 2.25 : 2} />
+                      {!collapsed && <span>{item.label}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
 
         {!collapsed && (
