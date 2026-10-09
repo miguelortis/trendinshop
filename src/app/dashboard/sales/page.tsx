@@ -86,14 +86,12 @@ export default function SalesPage() {
           <div className="stat-value">{money(pending)}</div>
           <div className="stat-hint">Saldo de estas ventas</div>
         </article>
-        {isAdmin ? (
-          <article className="stat-card">
-            <span className="stat-icon"><ArrowUpRight size={18} /></span>
-            <div className="stat-label">Ganancia bruta</div>
-            <div className="stat-value">{money(profit)}</div>
-            <div className="stat-hint">Antes de gastos operativos</div>
-          </article>
-        ) : null}
+        <article className="stat-card">
+          <span className="stat-icon"><ArrowUpRight size={18} /></span>
+          <div className="stat-label">{isAdmin ? "Ganancia bruta" : "Ganancia estimada"}</div>
+          <div className="stat-value">{money(profit)}</div>
+          <div className="stat-hint">{isAdmin ? "Antes de gastos operativos" : "Diferencia entre tu precio y el mayorista"}</div>
+        </article>
       </section>
 
       <section className="panel-card sales-list-panel">
