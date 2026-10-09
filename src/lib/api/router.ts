@@ -5,8 +5,8 @@ import {
   registerUser,
 } from "@/lib/api/auth";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
-import { createCategory, listCategories, listProducts } from "@/lib/api/catalog";
-import { createProduct } from "@/lib/api/products";
+import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
+import { createProduct, updateProduct } from "@/lib/api/products";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
@@ -54,8 +54,10 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "products") {
+    if (method === "GET" && action) return getProductById(action, user.role);
     if (method === "GET") return listProducts();
     if (method === "POST") return createProduct(request, user.id, user.role);
+    if (method === "PUT" && action) return updateProduct(request, action, user.id, user.role);
   }
 
   if (resource === "inventory") {
