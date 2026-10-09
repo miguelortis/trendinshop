@@ -55,7 +55,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
 
   if (resource === "products") {
     if (method === "GET" && action) return getProductById(action, user.role);
-    if (method === "GET") return listProducts();
+    if (method === "GET") return listProducts(user.role);
     if (method === "POST") return createProduct(request, user.id, user.role);
     if (method === "PUT" && action) return updateProduct(request, action, user.id, user.role);
   }
