@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CategoryModel } from "@/models/Category";
 import { ProductModel } from "@/models/Product";
+import { ProductVariantModel } from "@/models/ProductVariant";
+import mongoose from "mongoose";
 
 function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
   return NextResponse.json({ ok: false, error: code, message }, { status });
@@ -84,5 +86,50 @@ export async function listProducts() {
   } catch (error) {
     console.error("[PRODUCTS_LIST]", error);
     return errorResponse("No pudimos cargar los productos.", 500, "INTERNAL_ERROR");
+  }
+}
+
+
+export async function getProductById(id: string, userRole: string) {
+  if (!mongoose.isValidObjectId(id)) {
+    return errorResponse("El producto solicitado no es válido.", 400, "INVALID_PRODUCT_ID");
+  }
+
+  try {
+    await connectMongoDB();
+
+    const product = await ProductModel.findOne({ _id: id, isActive: true })
+      .populate("categoryId", "name slug description")
+      .lean();
+
+    if (!product) {
+      return errorResponse("No encontramos ese producto.", 404, "PRODUCT_NOT_FOUND");
+    }
+
+    const variants = await ProductVariantModel.find({
+      productId: product._id,
+      isActive: true,
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    if (userRole === "ADMIN") {
+      return NextResponse.json({ ok: true, product, variants });
+    }
+
+    const safeProduct = { ...product, purchasePrice: undefined };
+    const safeVariants = variants.map((variant) => ({
+      ...variant,
+      purchasePrice: undefined,
+    }));
+
+    return NextResponse.json({
+      ok: true,
+      product: safeProduct,
+      variants: safeVariants,
+    });
+  } catch (error) {
+    console.error("[PRODUCT_DETAIL]", error);
+    return errorResponse("No pudimos cargar el detalle del producto.", 500, "INTERNAL_ERROR");
   }
 }
