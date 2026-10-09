@@ -16,6 +16,7 @@ import {
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
 import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
+import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
   cleanupCurrentUserPendingImages,
@@ -83,6 +84,15 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "GET" && action === "options") return getSaleOptions(user.id, user.role);
     if (method === "GET" && !action) return listSales(user.id, user.role);
     if (method === "POST" && !action) return createSale(request, user.id, user.role);
+  }
+
+  if (resource === "receivables" && method === "GET") {
+    return listReceivables(user.id);
+  }
+
+  if (resource === "payments") {
+    if (method === "GET") return listPayments(user.id);
+    if (method === "POST" && !action) return registerPayment(request, user.id);
   }
 
   if (resource === "customers") {
