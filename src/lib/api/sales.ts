@@ -87,7 +87,7 @@ function serializeSale(input: unknown, userRole: string) {
   const value = typeof sale.toObject === "function" ? sale.toObject() as Record<string, any> : sale;
   const items = (Array.isArray(value.items) ? value.items : []).map((rawItem: Record<string, any>) => {
     const unitProfit = fromCents(toCents(Number(rawItem.unitPrice)) - toCents(Number(rawItem.unitCost)));
-    const safeItem = {
+    const safeItem: Record<string, any> = {
       ...rawItem,
       unitProfit,
       lineProfit: fromCents(toCents(Number(rawItem.lineTotal)) - toCents(Number(rawItem.lineCostTotal))),
@@ -259,17 +259,18 @@ export async function createSale(request: Request, userId: string, userRole: str
     const note = text(body.note).slice(0, 500);
 
     await connectMongoDB();
-    session = await mongoose.startSession();
+    const transactionSession = await mongoose.startSession();
+    session = transactionSession;
     let createdSale: unknown = null;
 
-    await session.withTransaction(async () => {
+    await transactionSession.withTransaction(async () => {
       let customer: CustomerRecord | null = null;
       if (customerId) {
         customer = await CustomerModel.findOne({
           _id: customerId,
           ownerId: userId,
           isActive: true,
-        }).session(session).lean() as unknown as CustomerRecord | null;
+        }).session(transactionSession).lean() as unknown as CustomerRecord | null;
         if (!customer) fail("No encontramos al cliente seleccionado en tu directorio.", 404, "CUSTOMER_NOT_FOUND");
       }
 
@@ -277,7 +278,7 @@ export async function createSale(request: Request, userId: string, userRole: str
       const variants = await ProductVariantModel.find({
         _id: { $in: variantIds },
         isActive: true,
-      }).session(session).lean() as unknown as VariantRecord[];
+      }).session(transactionSession).lean() as unknown as VariantRecord[];
 
       if (variants.length !== lines.length) {
         fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
@@ -287,7 +288,7 @@ export async function createSale(request: Request, userId: string, userRole: str
       for (const variant of variants) variantById.set(String(variant._id), variant);
       const productIds = [...new Set(variants.map((variant) => String(variant.productId)))];
       const products = await ProductModel.find({ _id: { $in: productIds }, isActive: true })
-        .session(session)
+        .session(transactionSession)
         .lean() as unknown as ProductRecord[];
 
       if (products.length !== productIds.length) {
@@ -301,7 +302,7 @@ export async function createSale(request: Request, userId: string, userRole: str
             resellerId: userId,
             productId: { $in: productIds },
             isActive: true,
-          }).session(session).lean() as unknown as CatalogPriceRecord[]
+          }).session(transactionSession).lean() as unknown as CatalogPriceRecord[]
         : [];
       const catalogByProductId = new Map<string, CatalogPriceRecord>();
       for (const item of resellerCatalogItems) catalogByProductId.set(String(item.productId), item);
@@ -357,7 +358,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         const updated = await ProductVariantModel.updateOne(
           { _id: item.variant._id, isActive: true, stock: { $gte: item.quantity } },
           { $inc: { stock: -item.quantity } },
-          { session },
+          { session: transactionSession },
         ).exec();
 
         if (updated.modifiedCount !== 1) {
@@ -409,7 +410,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         paymentStatus: balanceDue <= 0 ? "PAID" : amountPaid > 0 ? "PARTIAL" : "UNPAID",
         note,
         isActive: true,
-      }], { session });
+      }], { session: transactionSession });
 
       createdSale = created[0];
 
@@ -423,7 +424,7 @@ export async function createSale(request: Request, userId: string, userRole: str
           referenceId: String((createdSale as { _id: mongoose.Types.ObjectId })._id),
           performedBy: userId,
         })),
-        { session },
+        { session: transactionSession },
       );
 
       if (initialPaymentCents > 0) {
@@ -434,7 +435,7 @@ export async function createSale(request: Request, userId: string, userRole: str
           method: paymentMethod,
           note: note ? "Pago inicial. " + note : "Pago inicial de la venta",
           receivedBy: userId,
-        }], { session });
+        }], { session: transactionSession });
       }
     });
 
