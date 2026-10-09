@@ -12,7 +12,7 @@ import { SalePaymentModel } from "@/models/SalePayment";
 
 type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown };
 type ProductRecord = {
-  _id: unknown;
+  _id: mongoose.Types.ObjectId;
   title: string;
   sku: string;
   wholesalePrice: number;
@@ -20,8 +20,8 @@ type ProductRecord = {
   isActive?: boolean;
 };
 type VariantRecord = {
-  _id: unknown;
-  productId: unknown;
+  _id: mongoose.Types.ObjectId;
+  productId: mongoose.Types.ObjectId;
   label: string;
   sku: string;
   options?: { name: string; value: string }[];
@@ -30,9 +30,9 @@ type VariantRecord = {
   wholesalePrice?: number | null;
   isActive?: boolean;
 };
-type CatalogPriceRecord = { productId: unknown; sellingPrice: number; isActive: boolean };
+type CatalogPriceRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; isActive: boolean };
 type CustomerRecord = {
-  _id: unknown;
+  _id: mongoose.Types.ObjectId;
   documentId: string;
   firstName: string;
   lastName: string;
@@ -148,7 +148,7 @@ export async function getSaleOptions(userId: string, userRole: string) {
     await connectMongoDB();
 
     let catalogItems: CatalogPriceRecord[] = [];
-    let productIds: unknown[];
+    let productIds: mongoose.Types.ObjectId[];
 
     if (userRole === "RESELLER") {
       catalogItems = await ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
@@ -420,7 +420,7 @@ export async function createSale(request: Request, userId: string, userRole: str
           type: "SALE",
           reason: "Venta " + saleNumber,
           referenceType: "SALE",
-          referenceId: String((createdSale as { _id: unknown })._id),
+          referenceId: String((createdSale as { _id: mongoose.Types.ObjectId })._id),
           performedBy: userId,
         })),
         { session },
