@@ -179,8 +179,8 @@ export async function registerPayment(request: Request, userId: string) {
     }
 
     await connectMongoDB();
-    session = await mongoose.startSession();
-    const transactionSession = session;
+    const transactionSession = await mongoose.startSession();
+    session = transactionSession;
     let responsePayment: Record<string, unknown> | null = null;
     let responseSale: Record<string, unknown> | null = null;
 
