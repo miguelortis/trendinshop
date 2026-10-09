@@ -445,7 +445,10 @@ async function prepareEditedProductImages(
   userId: string,
   productId: string,
 ) {
-  const existingByUrl = new Map(currentImages.map((image) => [image.url, image]));
+  const existingByUrl = new Map<string, { url: string; alt?: string; isPrimary?: boolean }>();
+  for (const image of currentImages) {
+    existingByUrl.set(image.url, image);
+  }
   const finalImages: { url: string; alt: string; isPrimary: boolean }[] = [];
   const pendingUrls: string[] = [];
   const newPermanentUrls: string[] = [];
@@ -603,7 +606,10 @@ export async function updateProduct(
       productId: product._id,
       isActive: true,
     });
-    const variantsById = new Map(activeVariants.map((variant) => [variant._id.toString(), variant]));
+    const variantsById = new Map<string, (typeof activeVariants)[number]>();
+    for (const variant of activeVariants) {
+      variantsById.set(variant._id.toString(), variant);
+    }
     const retainedVariantIds = new Set<string>();
     const variantSkus = new Set<string>();
 
