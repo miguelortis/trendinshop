@@ -2060,3 +2060,149 @@ button, input, select, textarea { font: inherit; }
   .sale-summary-card { padding: 16px; }
   .sale-summary-total { font-size: 25px; }
 }
+
+
+/* Cuentas por cobrar y registro de abonos */
+.receivables-summary-grid,
+.payments-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.receivables-summary-grid .stat-card,
+.payments-summary-grid .stat-card { min-width: 0; }
+.receivables-summary-grid .stat-value,
+.payments-summary-grid .stat-value { font-size: clamp(20px, 2vw, 27px); overflow-wrap: anywhere; }
+.receivables-panel,
+.payments-list-panel { padding: 20px; }
+.receivables-header,
+.payments-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.receivables-header h2,
+.payments-list-header h2 { margin: 5px 0 0; font-size: 17px; letter-spacing: -.025em; }
+.receivables-search { flex: 0 1 390px; max-width: 390px; }
+.receivables-list,
+.payments-list { display: flex; flex-direction: column; }
+.receivable-row,
+.payment-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 0;
+  border-top: 1px solid #f0f1f4;
+}
+.receivable-icon,
+.payment-row-icon {
+  width: 41px;
+  height: 41px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #6941c6;
+  background: #f4efff;
+}
+.receivable-main,
+.payment-row-main { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.receivable-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.receivable-title-line > strong,
+.payment-row-main > strong { color: #101828; font-size: 12px; font-weight: 850; }
+.receivable-customer,
+.payment-row-main > span { color: #667085; font-size: 10px; line-height: 1.5; }
+.receivable-items,
+.payment-row-note {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #98a2b3;
+  font-size: 10px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.receivable-progress {
+  height: 5px;
+  overflow: hidden;
+  margin-top: 3px;
+  border-radius: 99px;
+  background: #f2f4f7;
+}
+.receivable-progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#8b5cf6,#3b82f6); }
+.receivable-progress-label { color: #98a2b3; font-size: 9px; }
+.receivable-financials {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.receivable-financials > span { color: #667085; font-size: 9px; }
+.receivable-financials > strong { color: #b54708; font-size: 16px; font-weight: 900; }
+.receivable-financials .product-card-action { min-height: 34px; white-space: nowrap; }
+.payments-count { color: #98a2b3; font-size: 10px; }
+.payment-row-amount { display: grid; justify-items: end; gap: 5px; flex: 0 0 auto; }
+.payment-row-amount > strong { color: #027a48; font-size: 14px; font-weight: 850; }
+.payment-row-amount > span { color: #98a2b3; font-size: 9px; }
+.payment-modal {
+  width: min(100%, 500px);
+  max-height: min(90vh, 780px);
+  overflow: auto;
+  padding: 23px;
+  border: 1px solid #eaecf0;
+  border-radius: 19px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(16,24,40,.22);
+}
+.payment-modal .panel-header { margin-bottom: 18px; }
+.payment-modal .panel-header h2 { margin: 5px 0 0; font-size: 19px; }
+.payment-modal-balance {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 13px 14px;
+  border: 1px solid #fedf89;
+  border-radius: 12px;
+  color: #93370d;
+  background: #fffaeb;
+}
+.payment-modal-balance span { font-size: 10px; font-weight: 700; }
+.payment-modal-balance strong { font-size: 21px; font-weight: 900; }
+.payment-modal .field { margin-bottom: 14px; }
+.payment-modal .field input,
+.payment-modal .field select { height: 42px; }
+.payment-modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.payment-modal-actions button { min-height: 40px; cursor: pointer; }
+.payment-modal-actions button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 900px) {
+  .receivables-header { align-items: stretch; flex-direction: column; }
+  .receivables-search { flex: auto; max-width: none; }
+}
+@media (max-width: 650px) {
+  .receivables-summary-grid,
+  .payments-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .receivables-summary-grid .stat-card,
+  .payments-summary-grid .stat-card { padding: 12px; }
+  .receivables-summary-grid .stat-value,
+  .payments-summary-grid .stat-value { font-size: 19px; }
+  .receivables-panel,
+  .payments-list-panel { padding: 14px; }
+  .receivable-row,
+  .payment-row { align-items: flex-start; flex-wrap: wrap; }
+  .receivable-icon,
+  .payment-row-icon { width: 35px; height: 35px; }
+  .receivable-main,
+  .payment-row-main { flex-basis: calc(100% - 50px); }
+  .receivable-financials,
+  .payment-row-amount { width: 100%; display: flex; align-items: baseline; flex-wrap: wrap; justify-items: start; gap: 8px 12px; padding-left: 48px; }
+  .receivable-financials > strong,
+  .payment-row-amount > strong { font-size: 14px; }
+  .payment-modal { padding: 17px; }
+  .payment-modal-actions { flex-direction: column-reverse; }
+  .payment-modal-actions button { width: 100%; justify-content: center; }
+}
