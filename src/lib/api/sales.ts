@@ -173,8 +173,11 @@ export async function getSaleOptions(userId: string, userRole: string) {
         .lean() as unknown as Promise<VariantRecord[]>,
     ]);
 
-    const productsById = new Map(products.map((product) => [String(product._id), product]));
-    const catalogByProductId = new Map(catalogItems.map((item) => [String(item.productId), item]));
+    const productsById = new Map<string, ProductRecord>();
+    for (const product of products) productsById.set(String(product._id), product);
+
+    const catalogByProductId = new Map<string, CatalogPriceRecord>();
+    for (const item of catalogItems) catalogByProductId.set(String(item.productId), item);
     const items = variants.flatMap((variant) => {
       const productId = String(variant.productId);
       const product = productsById.get(productId);
@@ -280,7 +283,8 @@ export async function createSale(request: Request, userId: string, userRole: str
         fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
       }
 
-      const variantById = new Map(variants.map((variant) => [String(variant._id), variant]));
+      const variantById = new Map<string, VariantRecord>();
+      for (const variant of variants) variantById.set(String(variant._id), variant);
       const productIds = [...new Set(variants.map((variant) => String(variant.productId)))];
       const products = await ProductModel.find({ _id: { $in: productIds }, isActive: true })
         .session(session)
@@ -290,7 +294,8 @@ export async function createSale(request: Request, userId: string, userRole: str
         fail("Uno de los productos ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
       }
 
-      const productById = new Map(products.map((product) => [String(product._id), product]));
+      const productById = new Map<string, ProductRecord>();
+      for (const product of products) productById.set(String(product._id), product);
       const resellerCatalogItems = userRole === "RESELLER"
         ? await ResellerCatalogItemModel.find({
             resellerId: userId,
@@ -298,7 +303,8 @@ export async function createSale(request: Request, userId: string, userRole: str
             isActive: true,
           }).session(session).lean() as unknown as CatalogPriceRecord[]
         : [];
-      const catalogByProductId = new Map(resellerCatalogItems.map((item) => [String(item.productId), item]));
+      const catalogByProductId = new Map<string, CatalogPriceRecord>();
+      for (const item of resellerCatalogItems) catalogByProductId.set(String(item.productId), item);
 
       const normalizedItems = lines.map((line) => {
         const variant = variantById.get(line.variantId);
