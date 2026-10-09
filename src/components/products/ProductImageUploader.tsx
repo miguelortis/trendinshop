@@ -305,9 +305,20 @@ export function ProductImageUploader({
     }
   }
 
+  function isPendingBlobUrl(value: string) {
+    try {
+      const pathname = decodeURIComponent(new URL(value).pathname).replace(/^\\/+/, "");
+      return pathname.startsWith("pending/products/");
+    } catch {
+      return false;
+    }
+  }
+
   async function removeImage(item: ImageItem) {
     try {
-      if (item.url) {
+      // Temporary uploads can be removed immediately. Existing product images
+      // are only deleted by the server after the edit is successfully saved.
+      if (item.url && isPendingBlobUrl(item.url)) {
         await api.post("/blob/delete", { url: item.url });
       }
     } catch (requestError) {
