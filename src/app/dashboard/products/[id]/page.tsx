@@ -59,7 +59,7 @@ export default function ProductDetailsPage() {
   const params = useParams<{ id: string }>();
   const productId = params.id;
   const { data: user, isLoading: userLoading } = useCurrentUser();
-  const [selectedImage, setSelectedImage] = useState(0);
+  const [selectedImage, setSelectedImage] = useState<number | null>(null);
 
   const query = useQuery({
     queryKey: ["product", productId],
@@ -92,8 +92,9 @@ export default function ProductDetailsPage() {
       ? product.categoryId.name
       : "Sin categoría";
   const images = product.images ?? [];
-  const activeImage =
-    images[selectedImage] ?? images.find((image) => image.isPrimary) ?? images[0];
+  const primaryIndex = Math.max(0, images.findIndex((image) => image.isPrimary));
+  const activeImage = images[selectedImage ?? primaryIndex] ?? images[0];
+  const activeIndex = selectedImage ?? primaryIndex;
   const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
   const lowStockVariants = variants.filter(
     (variant) => variant.stock > 0 && variant.stock <= variant.lowStockThreshold,
@@ -142,7 +143,7 @@ export default function ProductDetailsPage() {
                 <button
                   key={image.url}
                   type="button"
-                  className={index === selectedImage ? "product-detail-thumbnail active" : "product-detail-thumbnail"}
+                  className={index === activeIndex ? "product-detail-thumbnail active" : "product-detail-thumbnail"}
                   onClick={() => setSelectedImage(index)}
                   aria-label={`Ver imagen ${index + 1}`}
                 >
