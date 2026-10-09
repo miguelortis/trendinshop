@@ -95,7 +95,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "inventory") {
-    if (method === "GET") return listInventory();
+    if (method === "GET") return listInventory(user.role);
     if (method === "POST" && action === "adjust") {
       return adjustInventory(request, user.id, user.role);
     }
