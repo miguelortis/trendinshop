@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Boxes, Minus, Plus, Search, Warehouse } from "lucide-react";
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -16,7 +17,7 @@ type Variant = {
 };
 
 export default function InventoryPage() {
-  const { data: user } = useCurrentUser();
+  const { data: user, isLoading: userLoading } = useCurrentUser();
   const isAdmin = user?.role === "ADMIN";
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Variant | null>(null);
@@ -27,6 +28,7 @@ export default function InventoryPage() {
 
   const inventory = useQuery({
     queryKey: ["inventory"],
+    enabled: isAdmin,
     queryFn: async () =>
       (await api.get<{ ok: true; variants: Variant[] }>("/inventory")).data.variants,
   });
@@ -76,6 +78,30 @@ export default function InventoryPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (userLoading) {
+    return <div className="dashboard-page"><div className="panel-card dashboard-loading">Cargando tu cuenta...</div></div>;
+  }
+
+  if (user && !isAdmin) {
+    return (
+      <div className="dashboard-page">
+        <section className="page-heading">
+          <div>
+            <span className="page-kicker">Inventario central</span>
+            <h1>Inventario</h1>
+            <p>El control central de existencias está reservado al administrador.</p>
+          </div>
+        </section>
+        <div className="panel-card reseller-catalog-restricted">
+          <Warehouse size={28} />
+          <strong>Consulta existencias en los productos disponibles</strong>
+          <span>El stock de los artículos de tu catálogo aparece al explorar productos y al registrar una venta.</span>
+          <Link href="/dashboard/catalog" className="primary-button">Abrir mi catálogo</Link>
+        </div>
+      </div>
+    );
   }
 
   return (
