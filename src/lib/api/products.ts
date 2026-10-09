@@ -97,9 +97,9 @@ function parseImages(value: unknown, title: string): ProductImageData[] {
     )
     .slice(0, 12);
 
-  const primaryIndex = parsed.findIndex((image) => image.isPrimary);
+  const primaryIndex = parsed.findIndex((image: ProductImageData) => image.isPrimary);
 
-  return parsed.map((image, index) => ({
+  return parsed.map((image: ProductImageData, index: number) => ({
     ...image,
     isPrimary: primaryIndex >= 0 ? index === primaryIndex : index === 0,
   }));
@@ -674,12 +674,14 @@ export async function updateProduct(
     );
     promotedImageUrls = preparedImages.newPermanentUrls;
 
-    const previousImageUrls: string[] = currentImages.map(
-      (image: ProductImageData) => image.url,
-    );
-    const retainedImageUrls = new Set<string>(
-      preparedImages.images.map((image: ProductImageData) => image.url),
-    );
+    const previousImageUrls: string[] = [];
+    for (const image of currentImages as ProductImageData[]) {
+      previousImageUrls.push(image.url);
+    }
+    const retainedImageUrls = new Set<string>();
+    for (const image of preparedImages.images as ProductImageData[]) {
+      retainedImageUrls.add(image.url);
+    }
 
     product.set({
       title,
@@ -758,9 +760,10 @@ export async function updateProduct(
       }
     }
 
-    const obsoleteImages = previousImageUrls.filter(
-      (url: string) => !retainedImageUrls.has(url),
-    );
+    const obsoleteImages: string[] = [];
+    for (const url of previousImageUrls) {
+      if (!retainedImageUrls.has(url)) obsoleteImages.push(url);
+    }
     if (obsoleteImages.length) {
       try {
         await del(obsoleteImages);
