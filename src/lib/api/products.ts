@@ -8,6 +8,23 @@ import { ProductVariantModel } from "@/models/ProductVariant";
 import mongoose from "mongoose";
 import { isPendingProductImageUrl } from "@/lib/api/blob";
 
+type ProductImageData = {
+  url: string;
+  alt: string;
+  isPrimary: boolean;
+};
+
+type ParsedProductVariant = {
+  _id?: string;
+  label: string;
+  sku: string;
+  purchasePrice: number | null;
+  wholesalePrice: number | null;
+  stock: number;
+  lowStockThreshold: number;
+  options: { name: string; value: string }[];
+};
+
 function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
   return NextResponse.json({ ok: false, error: code, message }, { status });
 }
@@ -56,7 +73,7 @@ async function createUniqueSku(preferred: string, title: string) {
   return base.slice(0, 20) + "-" + Date.now().toString().slice(-6);
 }
 
-function parseImages(value: unknown, title: string) {
+function parseImages(value: unknown, title: string): ProductImageData[] {
   if (!Array.isArray(value)) return [];
 
   const unique = new Set<string>();
@@ -89,7 +106,7 @@ function parseImages(value: unknown, title: string) {
 }
 
 async function promoteProductImages(
-  images: { url: string; alt: string; isPrimary: boolean }[],
+  images: ProductImageData[],
   userId: string,
   productId: string,
 ) {
@@ -143,7 +160,7 @@ async function promoteProductImages(
   }
 }
 
-function parseVariants(value: unknown) {
+function parseVariants(value: unknown): ParsedProductVariant[] {
   if (!Array.isArray(value)) return [];
 
   return value.map((raw, index) => {
@@ -173,7 +190,7 @@ function parseVariants(value: unknown) {
         : Number(item.wholesalePrice);
 
     return {
-      _id: text(item._id),
+      _id: text(item._id) || undefined,
       label:
         text(item.label) ||
         (options.length
@@ -440,7 +457,7 @@ export async function createProduct(
 
 
 async function prepareEditedProductImages(
-  requestedImages: { url: string; alt: string; isPrimary: boolean }[],
+  requestedImages: ProductImageData[],
   currentImages: { url: string; alt?: string; isPrimary?: boolean }[],
   userId: string,
   productId: string,
@@ -642,7 +659,9 @@ export async function updateProduct(
       return errorResponse("Uno de los SKUs de variantes ya está en uso.", 409, "VARIANT_SKU_EXISTS");
     }
 
-    const currentImages = product.images.map((image) => ({
+    const currentImages: ProductImageData[] = Array.from(
+      product.images as unknown as ProductImageData[],
+    ).map((image: ProductImageData) => ({
       url: image.url,
       alt: image.alt,
       isPrimary: image.isPrimary,
@@ -655,8 +674,12 @@ export async function updateProduct(
     );
     promotedImageUrls = preparedImages.newPermanentUrls;
 
-    const previousImageUrls = currentImages.map((image) => image.url);
-    const retainedImageUrls = new Set(preparedImages.images.map((image) => image.url));
+    const previousImageUrls: string[] = currentImages.map(
+      (image: ProductImageData) => image.url,
+    );
+    const retainedImageUrls = new Set<string>(
+      preparedImages.images.map((image: ProductImageData) => image.url),
+    );
 
     product.set({
       title,
@@ -735,7 +758,9 @@ export async function updateProduct(
       }
     }
 
-    const obsoleteImages = previousImageUrls.filter((url) => !retainedImageUrls.has(url));
+    const obsoleteImages = previousImageUrls.filter(
+      (url: string) => !retainedImageUrls.has(url),
+    );
     if (obsoleteImages.length) {
       try {
         await del(obsoleteImages);
