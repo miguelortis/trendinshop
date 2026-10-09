@@ -399,7 +399,6 @@ export default function EditProductPage() {
                   <input
                     value={sku}
                     onChange={(event) => {
-                      setSkuEdited(true);
                       setSku(event.target.value.toUpperCase());
                     }}
                     placeholder="Se genera automáticamente"
