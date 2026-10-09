@@ -310,6 +310,10 @@ export async function deleteBlob(request: Request) {
       return errorResponse("La imagen no pertenece al almacenamiento de TrendinShop.");
     }
 
+    if (!isPendingProductImageUrl(url, user.id)) {
+      return errorResponse("Solo se pueden eliminar imágenes temporales desde esta ruta.", 403, "FORBIDDEN");
+    }
+
     await del(url);
     return NextResponse.json({ ok: true });
   } catch (error) {
