@@ -73,7 +73,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="app-nav">
           {navSections.map((section) => {
             const visibleItems = section.items.filter(
-              (item) => !(item.href === "/dashboard/catalog" && user?.role === "ADMIN"),
+              (item) => !(item.href === "/dashboard/catalog" && user?.role === "ADMIN") &&
+                !(item.href === "/dashboard/inventory" && user?.role !== "ADMIN"),
             );
             if (!visibleItems.length) return null;
 
