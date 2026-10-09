@@ -61,10 +61,13 @@ export default function ResellerCatalogPage() {
     queryFn: async () => (await api.get<CatalogResponse>("/catalog")).data,
   });
 
-  const itemByProductId = useMemo(
-    () => new Map((catalog.data?.items ?? []).map((item) => [item.productId, item])),
-    [catalog.data?.items],
-  );
+  const itemByProductId = useMemo(() => {
+    const items = new Map<string, CatalogItem>();
+    for (const item of catalog.data?.items ?? []) {
+      items.set(item.productId, item);
+    }
+    return items;
+  }, [catalog.data?.items]);
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
