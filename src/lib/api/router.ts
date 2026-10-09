@@ -14,6 +14,7 @@ import {
   updateResellerCatalogItem,
 } from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
+import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
   cleanupCurrentUserPendingImages,
@@ -75,6 +76,15 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "GET") return listProducts(user.role);
     if (method === "POST") return createProduct(request, user.id, user.role);
     if (method === "PUT" && action) return updateProduct(request, action, user.id, user.role);
+  }
+
+  if (resource === "customers") {
+    if (method === "GET") return listCustomers(user.id);
+    if (method === "POST" && !action) return createCustomer(request, user.id);
+    if ((method === "PUT" || method === "PATCH") && action) {
+      return updateCustomer(request, action, user.id);
+    }
+    if (method === "DELETE" && action) return removeCustomer(action, user.id);
   }
 
   if (resource === "inventory") {
