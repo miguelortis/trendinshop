@@ -173,6 +173,7 @@ function parseVariants(value: unknown) {
         : Number(item.wholesalePrice);
 
     return {
+      _id: text(item._id),
       label:
         text(item.label) ||
         (options.length
@@ -433,5 +434,328 @@ export async function createProduct(
       500,
       "INTERNAL_ERROR",
     );
+  }
+}
+
+
+async function prepareEditedProductImages(
+  requestedImages: { url: string; alt: string; isPrimary: boolean }[],
+  currentImages: { url: string; alt?: string; isPrimary?: boolean }[],
+  userId: string,
+  productId: string,
+) {
+  const existingByUrl = new Map(currentImages.map((image) => [image.url, image]));
+  const finalImages: { url: string; alt: string; isPrimary: boolean }[] = [];
+  const pendingUrls: string[] = [];
+  const newPermanentUrls: string[] = [];
+
+  try {
+    for (const image of requestedImages) {
+      const existing = existingByUrl.get(image.url);
+
+      if (existing) {
+        finalImages.push({
+          url: existing.url,
+          alt: image.alt || existing.alt || "",
+          isPrimary: image.isPrimary,
+        });
+        continue;
+      }
+
+      if (!isPendingProductImageUrl(image.url, userId)) {
+        throw new Error("INVALID_PRODUCT_IMAGE_URL");
+      }
+
+      const sourceUrl = new URL(image.url);
+      const pathname = decodeURIComponent(sourceUrl.pathname).replace(/^\/+/, "");
+      const filename = pathname.split("/").pop() || "image.webp";
+      const copied = await copy(
+        image.url,
+        "products/" + userId + "/" + productId + "/" + filename,
+        { access: "public", addRandomSuffix: true },
+      );
+
+      finalImages.push({
+        url: copied.url,
+        alt: image.alt,
+        isPrimary: image.isPrimary,
+      });
+      pendingUrls.push(image.url);
+      newPermanentUrls.push(copied.url);
+    }
+
+    return { images: finalImages, pendingUrls, newPermanentUrls };
+  } catch (error) {
+    if (newPermanentUrls.length) {
+      try {
+        await del(newPermanentUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_IMAGE_ROLLBACK]", cleanupError);
+      }
+    }
+
+    throw error;
+  }
+}
+
+export async function updateProduct(
+  request: Request,
+  productId: string,
+  userId: string,
+  userRole: string,
+) {
+  if (userRole !== "ADMIN") {
+    return errorResponse("Solo un administrador puede editar productos.", 403, "FORBIDDEN");
+  }
+
+  if (!mongoose.isValidObjectId(productId)) {
+    return errorResponse("El producto solicitado no es válido.", 400, "INVALID_PRODUCT_ID");
+  }
+
+  let promotedImageUrls: string[] = [];
+
+  try {
+    const body = (await request.json()) as Record<string, unknown>;
+    const title = text(body.title);
+    const description = text(body.description);
+    const categoryId = text(body.categoryId);
+    const preferredSku = text(body.sku).toUpperCase();
+    const purchasePrice = Number(body.purchasePrice);
+    const wholesalePrice = Number(body.wholesalePrice);
+    const images = parseImages(body.images, title);
+    const variants = parseVariants(body.variants);
+
+    if (!title || !categoryId) {
+      return errorResponse("Título y categoría son obligatorios.");
+    }
+
+    if (!preferredSku) {
+      return errorResponse("El SKU del producto es obligatorio.");
+    }
+
+    if (!Number.isFinite(purchasePrice) || purchasePrice < 0) {
+      return errorResponse("El precio de compra no es válido.");
+    }
+
+    if (!Number.isFinite(wholesalePrice) || wholesalePrice < purchasePrice) {
+      return errorResponse("El precio mayorista no puede ser menor que el precio de compra.");
+    }
+
+    if (!mongoose.isValidObjectId(categoryId)) {
+      return errorResponse("La categoría no es válida.");
+    }
+
+    if (!variants.length) {
+      return errorResponse("El producto debe tener al menos una variante.");
+    }
+
+    for (const variant of variants) {
+      if (
+        (variant.purchasePrice !== null &&
+          (!Number.isFinite(variant.purchasePrice) || variant.purchasePrice < 0)) ||
+        (variant.wholesalePrice !== null &&
+          (!Number.isFinite(variant.wholesalePrice) || variant.wholesalePrice < 0)) ||
+        (variant.purchasePrice !== null &&
+          variant.wholesalePrice !== null &&
+          variant.wholesalePrice < variant.purchasePrice) ||
+        !Number.isFinite(variant.stock) ||
+        variant.stock < 0 ||
+        !Number.isFinite(variant.lowStockThreshold) ||
+        variant.lowStockThreshold < 0
+      ) {
+        return errorResponse("Revisa los precios y el inventario de las variantes.");
+      }
+    }
+
+    await connectMongoDB();
+
+    const product = await ProductModel.findOne({ _id: productId, isActive: true });
+    if (!product) {
+      return errorResponse("No encontramos ese producto.", 404, "PRODUCT_NOT_FOUND");
+    }
+
+    const categoryExists = await CategoryModel.exists({ _id: categoryId, isActive: true });
+    if (!categoryExists) {
+      return errorResponse("La categoría no existe o está inactiva.", 404, "CATEGORY_NOT_FOUND");
+    }
+
+    const slug = slugify(title);
+    if (!slug) {
+      return errorResponse("El título no permite generar un identificador válido.");
+    }
+
+    const [duplicateSlug, duplicateSku] = await Promise.all([
+      ProductModel.exists({ _id: { $ne: product._id }, slug }),
+      ProductModel.exists({ _id: { $ne: product._id }, sku: preferredSku }),
+    ]);
+
+    if (duplicateSlug) {
+      return errorResponse("Ya existe otro producto con ese nombre.", 409, "PRODUCT_EXISTS");
+    }
+
+    if (duplicateSku) {
+      return errorResponse("Ese SKU ya pertenece a otro producto.", 409, "PRODUCT_SKU_EXISTS");
+    }
+
+    const activeVariants = await ProductVariantModel.find({
+      productId: product._id,
+      isActive: true,
+    });
+    const variantsById = new Map(activeVariants.map((variant) => [variant._id.toString(), variant]));
+    const retainedVariantIds = new Set<string>();
+    const variantSkus = new Set<string>();
+
+    for (const [index, variant] of variants.entries()) {
+      if (!variant.sku) {
+        variant.sku = index === 0 ? preferredSku : preferredSku + "-" + (index + 1);
+      }
+
+      if (variantSkus.has(variant.sku)) {
+        return errorResponse("Hay SKUs de variantes repetidos.");
+      }
+      variantSkus.add(variant.sku);
+
+      if (variant._id) {
+        if (!mongoose.isValidObjectId(variant._id) || !variantsById.has(variant._id)) {
+          return errorResponse("Una variante no pertenece a este producto.", 400, "INVALID_VARIANT");
+        }
+        retainedVariantIds.add(variant._id);
+      }
+    }
+
+    const excludedVariantIds = Array.from(retainedVariantIds)
+      .map((id) => new mongoose.Types.ObjectId(id));
+    const duplicateVariantSku = await ProductVariantModel.exists({
+      sku: { $in: Array.from(variantSkus) },
+      _id: { $nin: excludedVariantIds },
+    });
+
+    if (duplicateVariantSku) {
+      return errorResponse("Uno de los SKUs de variantes ya está en uso.", 409, "VARIANT_SKU_EXISTS");
+    }
+
+    const currentImages = product.images.map((image) => ({
+      url: image.url,
+      alt: image.alt,
+      isPrimary: image.isPrimary,
+    }));
+    const preparedImages = await prepareEditedProductImages(
+      images,
+      currentImages,
+      userId,
+      product._id.toString(),
+    );
+    promotedImageUrls = preparedImages.newPermanentUrls;
+
+    const previousImageUrls = currentImages.map((image) => image.url);
+    const retainedImageUrls = new Set(preparedImages.images.map((image) => image.url));
+
+    product.set({
+      title,
+      slug,
+      description,
+      categoryId,
+      sku: preferredSku,
+      purchasePrice,
+      wholesalePrice,
+      images: preparedImages.images,
+    });
+    await product.save();
+
+    for (const oldVariant of activeVariants) {
+      if (!retainedVariantIds.has(oldVariant._id.toString())) {
+        oldVariant.isActive = false;
+        await oldVariant.save();
+      }
+    }
+
+    for (const variant of variants) {
+      if (variant._id) {
+        const existing = variantsById.get(variant._id)!;
+        const oldStock = existing.stock;
+        existing.label = variant.label;
+        existing.options = variant.options;
+        existing.sku = variant.sku;
+        existing.purchasePrice = variant.purchasePrice;
+        existing.wholesalePrice = variant.wholesalePrice;
+        existing.lowStockThreshold = variant.lowStockThreshold;
+        existing.stock = variant.stock;
+        existing.isActive = true;
+        await existing.save();
+
+        const delta = variant.stock - oldStock;
+        if (delta !== 0) {
+          await InventoryMovementModel.create({
+            variantId: existing._id,
+            delta,
+            type: "ADJUSTMENT",
+            reason: "Ajuste de stock desde la edición del producto",
+            performedBy: userId,
+          });
+        }
+      } else {
+        const created = await ProductVariantModel.create({
+          productId: product._id,
+          label: variant.label,
+          options: variant.options,
+          sku: variant.sku,
+          purchasePrice: variant.purchasePrice,
+          wholesalePrice: variant.wholesalePrice,
+          stock: variant.stock,
+          lowStockThreshold: variant.lowStockThreshold,
+          isActive: true,
+        });
+
+        if (created.stock > 0) {
+          await InventoryMovementModel.create({
+            variantId: created._id,
+            delta: created.stock,
+            type: "INITIAL",
+            reason: "Stock inicial de nueva variante",
+            performedBy: userId,
+          });
+        }
+      }
+    }
+
+    if (preparedImages.pendingUrls.length) {
+      try {
+        await del(preparedImages.pendingUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_PENDING_IMAGE_CLEANUP]", cleanupError);
+      }
+    }
+
+    const obsoleteImages = previousImageUrls.filter((url) => !retainedImageUrls.has(url));
+    if (obsoleteImages.length) {
+      try {
+        await del(obsoleteImages);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_OBSOLETE_IMAGE_CLEANUP]", cleanupError);
+      }
+    }
+
+    const updatedVariants = await ProductVariantModel.find({
+      productId: product._id,
+      isActive: true,
+    }).sort({ createdAt: 1 }).lean();
+
+    return NextResponse.json({
+      ok: true,
+      product: await ProductModel.findById(product._id).populate("categoryId", "name slug").lean(),
+      variants: updatedVariants,
+      message: "Producto actualizado correctamente.",
+    });
+  } catch (error) {
+    if (promotedImageUrls.length) {
+      try {
+        await del(promotedImageUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_IMAGE_CLEANUP]", cleanupError);
+      }
+    }
+
+    console.error("[PRODUCT_UPDATE]", error);
+    return errorResponse("No pudimos guardar los cambios del producto.", 500, "INTERNAL_ERROR");
   }
 }
