@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { FolderPlus, Package, Plus, Search, Tag } from "lucide-react";
+import { Eye, FolderPlus, Package, Pencil, Plus, Search, Tag } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
@@ -161,13 +161,17 @@ export default function ProductsPage() {
                 </div>
                 <div className="product-card-body">
                   <span className="product-category">{category}</span>
-                  <h2>{product.title}</h2>
+                  <Link href={`/dashboard/products/${product._id}`} className="product-card-title-link">
+                    <h2>{product.title}</h2>
+                  </Link>
                   <div className="product-sku">SKU {product.sku}</div>
                   <div className="product-card-footer product-card-financials">
-                    <div>
-                      <span>Compra</span>
-                      <strong>{"$"}{product.purchasePrice.toFixed(2)}</strong>
-                    </div>
+                    {isAdmin ? (
+                      <div>
+                        <span>Compra</span>
+                        <strong>{"$"}{product.purchasePrice.toFixed(2)}</strong>
+                      </div>
+                    ) : null}
                     <div>
                       <span>Mayorista</span>
                       <strong>{"$"}{product.wholesalePrice.toFixed(2)}</strong>
@@ -179,6 +183,16 @@ export default function ProductsPage() {
                           {"$"}{Math.max(0, product.wholesalePrice - product.purchasePrice).toFixed(2)}
                         </strong>
                       </div>
+                    ) : null}
+                  </div>
+                  <div className="product-card-actions">
+                    <Link href={`/dashboard/products/${product._id}`} className="product-card-action secondary">
+                      <Eye size={14} /> Ver detalles
+                    </Link>
+                    {isAdmin ? (
+                      <Link href={`/dashboard/products/${product._id}/edit`} className="product-card-action primary">
+                        <Pencil size={14} /> Editar
+                      </Link>
                     ) : null}
                   </div>
                 </div>
