@@ -51,27 +51,21 @@ function readCustomerInput(body: Record<string, unknown>): CustomerInput | null 
   return input;
 }
 
-function serializeCustomer(customer: {
-  _id: unknown;
-  documentId: string;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  email?: string;
-  address?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}) {
+function serializeCustomer<T extends { _id: unknown }>(customer: T) {
+  // Mongoose documents and .lean() results can have different inferred types.
+  // Normalize both into the same JSON-safe shape at this boundary.
+  const value = customer as unknown as Record<string, unknown>;
+
   return {
-    _id: String(customer._id),
-    documentId: customer.documentId,
-    firstName: customer.firstName,
-    lastName: customer.lastName,
-    phone: customer.phone,
-    email: customer.email ?? "",
-    address: customer.address ?? "",
-    createdAt: customer.createdAt,
-    updatedAt: customer.updatedAt,
+    _id: String(value._id),
+    documentId: text(value.documentId),
+    firstName: text(value.firstName),
+    lastName: text(value.lastName),
+    phone: text(value.phone),
+    email: text(value.email),
+    address: text(value.address),
+    createdAt: value.createdAt instanceof Date ? value.createdAt : undefined,
+    updatedAt: value.updatedAt instanceof Date ? value.updatedAt : undefined,
   };
 }
 
