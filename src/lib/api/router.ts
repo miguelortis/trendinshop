@@ -7,6 +7,12 @@ import {
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
 import { createProduct, updateProduct } from "@/lib/api/products";
+import {
+  addResellerCatalogItem,
+  listResellerCatalog,
+  removeResellerCatalogItem,
+  updateResellerCatalogItem,
+} from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
@@ -51,6 +57,17 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "categories") {
     if (method === "GET") return listCategories();
     if (method === "POST") return createCategory(request, user.role);
+  }
+
+  if (resource === "catalog") {
+    if (method === "GET") return listResellerCatalog(user.id, user.role);
+    if (method === "POST" && !action) return addResellerCatalogItem(request, user.id, user.role);
+    if ((method === "PATCH" || method === "PUT") && action) {
+      return updateResellerCatalogItem(request, action, user.id, user.role);
+    }
+    if (method === "DELETE" && action) {
+      return removeResellerCatalogItem(action, user.id, user.role);
+    }
   }
 
   if (resource === "products") {
