@@ -13,7 +13,11 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function listInventory() {
+export async function listInventory(userRole: string) {
+  if (userRole !== "ADMIN") {
+    return errorResponse("Solo un administrador puede consultar el inventario central.", 403, "FORBIDDEN");
+  }
+
   try {
     await connectMongoDB();
 
