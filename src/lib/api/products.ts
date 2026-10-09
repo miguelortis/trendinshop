@@ -238,6 +238,7 @@ export async function createProduct(
 
     if (variants.length === 0) {
       variants.push({
+        _id: "",
         label: "Única",
         sku: preferredSku,
         purchasePrice: null,
@@ -513,6 +514,7 @@ export async function updateProduct(
   }
 
   let promotedImageUrls: string[] = [];
+  let productSaved = false;
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
@@ -661,6 +663,7 @@ export async function updateProduct(
       images: preparedImages.images,
     });
     await product.save();
+    productSaved = true;
 
     for (const oldVariant of activeVariants) {
       if (!retainedVariantIds.has(oldVariant._id.toString())) {
@@ -747,7 +750,7 @@ export async function updateProduct(
       message: "Producto actualizado correctamente.",
     });
   } catch (error) {
-    if (promotedImageUrls.length) {
+    if (!productSaved && promotedImageUrls.length) {
       try {
         await del(promotedImageUrls);
       } catch (cleanupError) {
