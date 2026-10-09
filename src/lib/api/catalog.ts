@@ -74,7 +74,7 @@ export async function createCategory(request: Request, userRole: string) {
   }
 }
 
-export async function listProducts() {
+export async function listProducts(userRole: string) {
   try {
     await connectMongoDB();
     const products = await ProductModel.find({ isActive: true })
@@ -82,7 +82,12 @@ export async function listProducts() {
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json({ ok: true, products });
+    const safeProducts =
+      userRole === "ADMIN"
+        ? products
+        : products.map((product) => ({ ...product, purchasePrice: undefined }));
+
+    return NextResponse.json({ ok: true, products: safeProducts });
   } catch (error) {
     console.error("[PRODUCTS_LIST]", error);
     return errorResponse("No pudimos cargar los productos.", 500, "INTERNAL_ERROR");
