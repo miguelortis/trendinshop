@@ -35,6 +35,8 @@ const saleItemSchema = new Schema(
     lineTotal: { type: Number, required: true, min: 0 },
     lineCostTotal: { type: Number, required: true, min: 0 },
     lineProfit: { type: Number, required: true },
+    supplierAmountPaid: { type: Number, min: 0 },
+    supplierBalanceDue: { type: Number, min: 0 },
   },
   { _id: false },
 );
@@ -43,6 +45,7 @@ const saleSchema = new Schema(
   {
     saleNumber: { type: String, required: true, unique: true, index: true },
     ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    ownerRole: { type: String, enum: ["ADMIN", "RESELLER"] },
     customerId: { type: Schema.Types.ObjectId, ref: "Customer", default: null, index: true },
     customerSnapshot: { type: saleCustomerSnapshotSchema, default: () => ({}) },
     items: { type: [saleItemSchema], required: true, validate: (items: unknown[]) => items.length > 0 },
@@ -50,6 +53,13 @@ const saleSchema = new Schema(
     total: { type: Number, required: true, min: 0 },
     totalCost: { type: Number, required: true, min: 0 },
     grossProfit: { type: Number, required: true },
+    supplierAmountDue: { type: Number, min: 0 },
+    supplierAmountPaid: { type: Number, min: 0 },
+    supplierBalanceDue: { type: Number, min: 0 },
+    supplierPaymentStatus: {
+      type: String,
+      enum: ["UNPAID", "PARTIAL", "PAID"],
+    },
     amountPaid: { type: Number, required: true, min: 0, default: 0 },
     balanceDue: { type: Number, required: true, min: 0, default: 0 },
     paymentStatus: {
