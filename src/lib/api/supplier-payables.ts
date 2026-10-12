@@ -209,10 +209,29 @@ export async function listSupplierPayables(userId: string, userRole: string) {
     const totalPaid = rows.reduce((sum, sale) => sum + sale.supplierAmountPaid, 0);
     const balanceDue = rows.reduce((sum, sale) => sum + sale.supplierBalanceDue, 0);
     const owingResellers = new Set(rows.filter((sale) => sale.supplierBalanceDue > 0).map((sale) => sale.ownerId));
+    const resellerSummaries = resellerUsers.map((reseller) => {
+      const resellerSales = rows.filter((sale) => sale.ownerId === String(reseller._id));
+      const resellerTotalDue = resellerSales.reduce((sum, sale) => sum + sale.supplierAmountDue, 0);
+      const resellerTotalPaid = resellerSales.reduce((sum, sale) => sum + sale.supplierAmountPaid, 0);
+      const resellerBalanceDue = resellerSales.reduce((sum, sale) => sum + sale.supplierBalanceDue, 0);
+      const customerBalanceDue = resellerSales.reduce((sum, sale) => sum + sale.customerBalanceDue, 0);
+      return {
+        id: String(reseller._id),
+        name: userName(reseller),
+        phone: reseller.phone ?? "",
+        email: reseller.email ?? "",
+        salesCount: resellerSales.length,
+        totalDue: fromCents(toCents(resellerTotalDue)),
+        totalPaid: fromCents(toCents(resellerTotalPaid)),
+        balanceDue: fromCents(toCents(resellerBalanceDue)),
+        customerBalanceDue: fromCents(toCents(customerBalanceDue)),
+      };
+    }).sort((a, b) => b.balanceDue - a.balanceDue || a.name.localeCompare(b.name));
 
     return NextResponse.json({
       ok: true,
       role: userRole,
+      resellers: resellerSummaries,
       summary: {
         salesCount: rows.length,
         totalDue: fromCents(toCents(totalDue)),
