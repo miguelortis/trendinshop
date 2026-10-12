@@ -150,15 +150,18 @@ export async function getSaleOptions(userId: string, userRole: string) {
     let catalogItems: CatalogPriceRecord[] = [];
     let productIds: mongoose.Types.ObjectId[];
 
-    if (userRole === "RESELLER") {
-      catalogItems = await ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
-        .select("productId sellingPrice isActive")
-        .lean() as unknown as CatalogPriceRecord[];
-      productIds = catalogItems.map((item) => item.productId);
-    } else if (userRole === "ADMIN") {
-      productIds = await ProductModel.find({ isActive: true }).distinct("_id");
-    } else {
+    if (userRole !== "RESELLER" && userRole !== "ADMIN") {
       return errorResponse("No tienes permiso para registrar ventas.", 403, "FORBIDDEN");
+    }
+
+    catalogItems = await ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
+      .select("productId sellingPrice isActive")
+      .lean() as unknown as CatalogPriceRecord[];
+
+    if (userRole === "RESELLER") {
+      productIds = catalogItems.map((item) => item.productId);
+    } else {
+      productIds = await ProductModel.find({ isActive: true }).distinct("_id");
     }
 
     if (!productIds.length) return NextResponse.json({ ok: true, items: [] });
@@ -194,8 +197,8 @@ export async function getSaleOptions(userId: string, userRole: string) {
         variantSku: variant.sku,
         options: variant.options ?? [],
         stock: variant.stock,
-        defaultUnitPrice: userRole === "RESELLER"
-          ? catalogItem!.sellingPrice
+        defaultUnitPrice: catalogItem
+          ? catalogItem.sellingPrice
           : (variant.wholesalePrice ?? product.wholesalePrice),
         canEditPrice: userRole === "ADMIN",
       }];
@@ -297,13 +300,11 @@ export async function createSale(request: Request, userId: string, userRole: str
 
       const productById = new Map<string, ProductRecord>();
       for (const product of products) productById.set(String(product._id), product);
-      const resellerCatalogItems = userRole === "RESELLER"
-        ? await ResellerCatalogItemModel.find({
-            resellerId: userId,
-            productId: { $in: productIds },
-            isActive: true,
-          }).session(transactionSession).lean() as unknown as CatalogPriceRecord[]
-        : [];
+      const resellerCatalogItems = await ResellerCatalogItemModel.find({
+        resellerId: userId,
+        productId: { $in: productIds },
+        isActive: true,
+      }).session(transactionSession).lean() as unknown as CatalogPriceRecord[];
       const catalogByProductId = new Map<string, CatalogPriceRecord>();
       for (const item of resellerCatalogItems) catalogByProductId.set(String(item.productId), item);
 
@@ -317,10 +318,10 @@ export async function createSale(request: Request, userId: string, userRole: str
           fail("Añade primero cada producto a tu catálogo personal.", 403, "PRODUCT_NOT_IN_CATALOG");
         }
 
-        const defaultPrice = userRole === "RESELLER"
-          ? catalogItem!.sellingPrice
+        const defaultPrice = catalogItem
+          ? catalogItem.sellingPrice
           : (variant.wholesalePrice ?? product.wholesalePrice);
-        const unitPrice = userRole === "RESELLER"
+        const unitPrice = userRole === "RESELLER" && catalogItem
           ? parsePrice(defaultPrice)
           : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
               ? parsePrice(defaultPrice)
