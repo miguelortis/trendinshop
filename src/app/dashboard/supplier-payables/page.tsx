@@ -106,6 +106,13 @@ function toCents(value: number) {
 function fromCents(value: number) {
   return Number((value / 100).toFixed(2));
 }
+function dateLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 
 function calculateItemSupplierBalance(item: SupplierSaleItem) {
   const unitCostCents = Math.max(0, toCents(item.wholesaleUnitCost));
