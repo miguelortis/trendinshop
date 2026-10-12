@@ -117,10 +117,11 @@ function methodLabel(method: PaymentMethod) {
 
 function normalizedItems(sale: SaleRecord, isResellerSale: boolean) {
   return (sale.items ?? []).map((item) => {
-    const paid = Math.max(0, item.supplierAmountPaid ?? 0);
-    const due = isResellerSale
-      ? Math.max(0, item.supplierBalanceDue ?? (item.lineCostTotal - paid))
-      : 0;
+    const costCents = Math.max(0, toCents(item.lineCostTotal));
+    const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
+    const paid = fromCents(paidCents);
+    // El saldo se deriva del costo real menos abonos, nunca de un saldo guardado que pueda estar obsoleto.
+    const due = isResellerSale ? fromCents(Math.max(0, costCents - paidCents)) : 0;
     return {
       productId: String(item.productId),
       variantId: String(item.variantId),
@@ -353,8 +354,10 @@ export async function registerSupplierPayment(request: Request, adminId: string,
       if (!reseller) fail("Esta venta no pertenece a un revendedor activo.", 409, "NOT_RESELLER_SALE");
 
       const lineBalances = sale.items.map((item) => {
-        const paid = Math.max(0, item.supplierAmountPaid ?? 0);
-        const balance = Math.max(0, item.supplierBalanceDue ?? (item.lineCostTotal - paid));
+        const costCents = Math.max(0, toCents(item.lineCostTotal));
+        const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
+        const paid = fromCents(paidCents);
+        const balance = fromCents(Math.max(0, costCents - paidCents));
         return { item, paid, balance, remaining: balance };
       });
       const balanceCents = lineBalances.reduce((sum, line) => sum + toCents(line.balance), 0);
