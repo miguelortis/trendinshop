@@ -210,38 +210,40 @@ export async function listSupplierPayables(userId: string, userRole: string) {
       sale,
       resellerById.get(String(sale.ownerId)),
     ));
-    const totalDue = rows.reduce((sum, sale) => sum + sale.supplierAmountDue, 0);
-    const totalPaid = rows.reduce((sum, sale) => sum + sale.supplierAmountPaid, 0);
-    const balanceDue = rows.reduce((sum, sale) => sum + sale.supplierBalanceDue, 0);
+    // Todos los totales monetarios se agregan en centavos enteros a partir de las líneas recalculadas.
+    const totalDueCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
+    const totalPaidCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
+    const balanceDueCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
     const owingResellers = new Set(rows.filter((sale) => sale.supplierBalanceDue > 0).map((sale) => sale.ownerId));
     const resellerSummaries = resellerUsers.map((reseller) => {
       const resellerSales = rows.filter((sale) => sale.ownerId === String(reseller._id));
-      const resellerTotalDue = resellerSales.reduce((sum, sale) => sum + sale.supplierAmountDue, 0);
-      const resellerTotalPaid = resellerSales.reduce((sum, sale) => sum + sale.supplierAmountPaid, 0);
-      const resellerBalanceDue = resellerSales.reduce((sum, sale) => sum + sale.supplierBalanceDue, 0);
-      const customerBalanceDue = resellerSales.reduce((sum, sale) => sum + sale.customerBalanceDue, 0);
+      const resellerTotalDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
+      const resellerTotalPaidCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
+      const resellerBalanceDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
+      const customerBalanceDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.customerBalanceDue), 0);
       return {
         id: String(reseller._id),
         name: userName(reseller),
         phone: reseller.phone ?? "",
         email: reseller.email ?? "",
         salesCount: resellerSales.length,
-        totalDue: fromCents(toCents(resellerTotalDue)),
-        totalPaid: fromCents(toCents(resellerTotalPaid)),
-        balanceDue: fromCents(toCents(resellerBalanceDue)),
-        customerBalanceDue: fromCents(toCents(customerBalanceDue)),
+        totalDue: fromCents(resellerTotalDueCents),
+        totalPaid: fromCents(resellerTotalPaidCents),
+        balanceDue: fromCents(resellerBalanceDueCents),
+        customerBalanceDue: fromCents(customerBalanceDueCents),
       };
     }).sort((a, b) => b.balanceDue - a.balanceDue || a.name.localeCompare(b.name));
 
     return NextResponse.json({
       ok: true,
       role: userRole,
+      calculationVersion: "supplier-debt-unit-cost-quantity-v2",
       resellers: resellerSummaries,
       summary: {
         salesCount: rows.length,
-        totalDue: fromCents(toCents(totalDue)),
-        totalPaid: fromCents(toCents(totalPaid)),
-        balanceDue: fromCents(toCents(balanceDue)),
+        totalDue: fromCents(totalDueCents),
+        totalPaid: fromCents(totalPaidCents),
+        balanceDue: fromCents(balanceDueCents),
         resellersOwing: owingResellers.size,
       },
       sales: rows,
