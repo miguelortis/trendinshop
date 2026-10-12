@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BarChart3, Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList,
+  BarChart3, Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList, HandCoins,
   LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen,
   Settings, ShoppingBag, UsersRound, WalletCards, X,
 } from "lucide-react";
@@ -24,6 +24,7 @@ const navSections = [
     { href: "/dashboard/customers", label: "Clientes", icon: UsersRound },
     { href: "/dashboard/receivables", label: "Por cobrar", icon: CircleDollarSign },
     { href: "/dashboard/payments", label: "Pagos", icon: WalletCards },
+    { href: "/dashboard/supplier-payables", label: "Deudas mayoristas", icon: HandCoins },
   ]},
   { label: "Sistema", items: [{ href: "/dashboard/settings", label: "Configuración", icon: Settings }]},
 ];
@@ -82,11 +83,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {!collapsed && <div className="app-nav-label">{section.label}</div>}
                 {visibleItems.map((item) => {
                   const Icon = item.icon;
+                  const label = item.href === "/dashboard/supplier-payables"
+                    ? user?.role === "ADMIN" ? "Deuda revendedores" : "Deuda proveedor"
+                    : item.label;
                   const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
                   return (
-                    <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined} className={active ? "app-nav-item active" : "app-nav-item"}>
+                    <Link key={item.href} href={item.href} title={collapsed ? label : undefined} className={active ? "app-nav-item active" : "app-nav-item"}>
                       <Icon size={18} strokeWidth={active ? 2.25 : 2} />
-                      {!collapsed && <span>{item.label}</span>}
+                      {!collapsed && <span>{label}</span>}
                     </Link>
                   );
                 })}
