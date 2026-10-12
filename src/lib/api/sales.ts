@@ -42,6 +42,28 @@ type CustomerRecord = {
   address?: string;
 };
 
+type PublicOrderSource = {
+  _id: mongoose.Types.ObjectId;
+  resellerId: mongoose.Types.ObjectId;
+  resellerRole: "ADMIN" | "RESELLER";
+  status: "PENDING" | "IN_PROGRESS" | "CANCELLED" | "CONVERTED";
+  items: {
+    variantId: mongoose.Types.ObjectId;
+    quantity: number;
+    unitPrice: number;
+  }[];
+  customer: {
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    email?: string;
+    address?: string;
+  };
+  saleId: mongoose.Types.ObjectId | null;
+  convertedAt: Date | null;
+  save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
+};
+
 class SaleRequestError extends Error {
   status: number;
   code: string;
@@ -273,7 +295,7 @@ export async function createSale(request: Request, userId: string, userRole: str
     let createdSale: unknown = null;
 
     await transactionSession.withTransaction(async () => {
-      let sourceOrder: Awaited<ReturnType<typeof PublicOrderModel.findOne>> | null = null;
+      let sourceOrder: PublicOrderSource | null = null;
       let effectiveLines = lines;
       const sourceOrderPriceByVariant = new Map<string, number>();
 
@@ -284,7 +306,7 @@ export async function createSale(request: Request, userId: string, userRole: str
           resellerRole: userRole,
           isActive: true,
           status: { $in: ["PENDING", "IN_PROGRESS"] },
-        }).session(transactionSession).exec();
+        }).session(transactionSession).exec() as unknown as PublicOrderSource | null;
 
         if (!sourceOrder) {
           fail("El pedido ya fue convertido, cancelado o no pertenece a tu catálogo.", 409, "PUBLIC_ORDER_NOT_CONVERTIBLE");
