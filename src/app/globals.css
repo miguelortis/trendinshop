@@ -2725,3 +2725,44 @@ button, input, select, textarea { font: inherit; }
   .supplier-payment-amount { margin-left: 50px; }
   .supplier-payment-modal { padding: 16px; }
 }
+
+
+.supplier-reseller-overview { margin: 0 0 18px; }
+.supplier-overview-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.supplier-overview-header h2 { margin: 5px 0 0; font-size: 17px; letter-spacing: -.03em; }
+.supplier-overview-header p { margin: 6px 0 0; color: #667085; font-size: 10px; line-height: 1.6; }
+.supplier-overview-header .secondary-button { min-height: 34px; flex: 0 0 auto; cursor: pointer; }
+.supplier-reseller-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.supplier-reseller-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  color: #101828;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.supplier-reseller-card:hover { transform: translateY(-1px); border-color: #c9bcff; box-shadow: 0 8px 22px rgba(16,24,40,.05); }
+.supplier-reseller-card.active { border-color: #8b5cf6; background: #fcfbff; box-shadow: 0 0 0 2px rgba(139,92,246,.1); }
+.supplier-reseller-card-top { display: flex; align-items: start; justify-content: space-between; gap: 9px; }
+.supplier-reseller-card-top > strong { min-width: 0; font-size: 12px; font-weight: 900; overflow-wrap: anywhere; }
+.supplier-reseller-card-top > span { color: #98a2b3; font-size: 9px; white-space: nowrap; }
+.supplier-reseller-debt-label { margin-top: 7px; color: #667085; font-size: 9px; }
+.supplier-reseller-balance { color: #027a48; font-size: 23px; font-weight: 900; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.supplier-reseller-balance.due-text { color: #b54708; }
+.supplier-reseller-stats { color: #667085; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .supplier-reseller-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 600px) {
+  .supplier-overview-header { align-items: flex-start; }
+  .supplier-reseller-grid { grid-template-columns: minmax(0,1fr); gap: 9px; }
+  .supplier-reseller-card { padding: 13px; }
+  .supplier-reseller-balance { font-size: 21px; }
+}
