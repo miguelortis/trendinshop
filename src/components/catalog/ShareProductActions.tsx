@@ -1,6 +1,6 @@
 "use client";
 
-import { Image, MessageCircle, Share2 } from "lucide-react";
+import { Image, MessageCircle } from "lucide-react";
 import { useState } from "react";
 
 type ShareProductActionsProps = {
