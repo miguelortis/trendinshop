@@ -16,6 +16,7 @@ import {
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
 import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
+import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
@@ -55,6 +56,11 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "POST" && action === "logout") return logoutUser();
   }
 
+  // El catálogo público admite solicitudes de pedido sin crear una cuenta de cliente.
+  if (resource === "public-orders" && method === "POST" && !action) {
+    return createPublicOrder(request);
+  }
+
   const user = await getAuthenticatedUser(request);
   if (!user) return unauthorized();
 
@@ -85,6 +91,11 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "GET" && action === "options") return getSaleOptions(user.id, user.role);
     if (method === "GET" && !action) return listSales(user.id, user.role);
     if (method === "POST" && !action) return createSale(request, user.id, user.role);
+  }
+
+  if (resource === "public-orders") {
+    if (method === "GET" && !action) return listPublicOrders(user.id, user.role);
+    if (method === "PATCH" && action) return updatePublicOrder(request, action, user.id, user.role);
   }
 
   if (resource === "receivables" && method === "GET") {
