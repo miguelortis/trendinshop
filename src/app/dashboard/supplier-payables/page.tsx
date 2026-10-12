@@ -340,6 +340,7 @@ export default function SupplierPayablesPage() {
 
                 <div className="supplier-sale-footer">
                   <div className="supplier-sale-footer-metric"><span>Total vendido al cliente</span><strong>{money(sale.total)}</strong></div>
+                  <div className="supplier-sale-footer-metric"><span>Recibido por el vendedor</span><strong>{money(sale.amountCollectedFromCustomer)}</strong></div>
                   <div className="supplier-sale-footer-metric"><span>{isAdmin ? "Saldo que el cliente debe al revendedor" : "Saldo que tu cliente te debe"}</span><strong className={sale.customerBalanceDue > 0 ? "due-text" : ""}>{money(sale.customerBalanceDue)}</strong></div>
                   <div className="supplier-sale-footer-metric"><span>Costo mayorista de esta venta</span><strong>{money(sale.supplierAmountDue)}</strong></div>
                   <div className="supplier-sale-footer-metric"><span>Deuda con el proveedor</span><strong className={sale.supplierBalanceDue > 0 ? "due-text" : ""}>{money(sale.supplierBalanceDue)}</strong></div>
