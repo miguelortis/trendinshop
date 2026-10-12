@@ -99,12 +99,46 @@ function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
-function dateLabel(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "—"
-    : new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(date);
+function toCents(value: number) {
+  return Math.round((value + Number.EPSILON) * 100);
 }
+
+function fromCents(value: number) {
+  return Number((value / 100).toFixed(2));
+}
+
+function calculateItemSupplierBalance(item: SupplierSaleItem) {
+  const unitCostCents = Math.max(0, toCents(item.wholesaleUnitCost));
+  const costCents = unitCostCents * Math.max(0, Math.trunc(item.quantity));
+  const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
+  return {
+    wholesaleCost: fromCents(costCents),
+    supplierAmountPaid: fromCents(paidCents),
+    supplierBalanceDue: fromCents(Math.max(0, costCents - paidCents)),
+  };
+}
+
+function normalizeSaleSupplierBalances(sale: SupplierSale): SupplierSale {
+  const items = sale.items.map((item) => ({
+    ...item,
+    ...calculateItemSupplierBalance(item),
+  }));
+  const supplierAmountDueCents = items.reduce((sum, item) => sum + toCents(item.wholesaleCost), 0);
+  const supplierAmountPaidCents = items.reduce((sum, item) => sum + toCents(item.supplierAmountPaid), 0);
+  const supplierBalanceDueCents = Math.max(0, supplierAmountDueCents - supplierAmountPaidCents);
+  return {
+    ...sale,
+    items,
+    supplierAmountDue: fromCents(supplierAmountDueCents),
+    supplierAmountPaid: fromCents(supplierAmountPaidCents),
+    supplierBalanceDue: fromCents(supplierBalanceDueCents),
+    supplierPaymentStatus: supplierBalanceDueCents <= 0
+      ? "PAID"
+      : supplierAmountPaidCents > 0 ? "PARTIAL" : "UNPAID",
+  };
+}
+
+
 
 function errorMessage(error: unknown) {
   const value = error as { response?: { data?: { message?: string } } };
@@ -178,8 +212,27 @@ export default function SupplierPayablesPage() {
     onError: (error: unknown) => setFormError(errorMessage(error)),
   });
 
-  const summary = payables.data?.summary;
-  const sales = payables.data?.sales ?? [];
+  // Recalcular también en el cliente a partir del costo unitario y cantidad. Esto evita
+  // que un supplierBalanceDue antiguo (por ejemplo, $0.05) vuelva a mostrarse.
+  const sales = useMemo(
+    () => (payables.data?.sales ?? []).map(normalizeSaleSupplierBalances),
+    [payables.data?.sales],
+  );
+  const summary = useMemo(() => {
+    const totalDueCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
+    const totalPaidCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
+    const balanceDueCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
+    const owingResellers = new Set(
+      sales.filter((sale) => sale.supplierBalanceDue > 0).map((sale) => sale.ownerId),
+    );
+    return {
+      salesCount: sales.length,
+      totalDue: fromCents(totalDueCents),
+      totalPaid: fromCents(totalPaidCents),
+      balanceDue: fromCents(balanceDueCents),
+      resellersOwing: owingResellers.size,
+    };
+  }, [sales]);
   const paymentRows = payments.data ?? [];
 
   const filteredSales = useMemo(() => {
@@ -188,10 +241,10 @@ export default function SupplierPayablesPage() {
       if (selectedResellerId && sale.ownerId !== selectedResellerId) return false;
       if (!term) return true;
       return [
-      sale.saleNumber,
-      sale.resellerName,
-      sale.customerName,
-      ...sale.items.map((item) => item.productTitle + " " + item.variantLabel + " " + item.productSku),
+        sale.saleNumber,
+        sale.resellerName,
+        sale.customerName,
+        ...sale.items.map((item) => item.productTitle + " " + item.variantLabel + " " + item.productSku),
       ].join(" ").toLowerCase().includes(term);
     });
   }, [sales, search, selectedResellerId]);
@@ -283,20 +336,27 @@ export default function SupplierPayablesPage() {
             {selectedResellerId ? <button type="button" className="secondary-button" onClick={() => setSelectedResellerId("")}>Ver todos</button> : null}
           </div>
           <div className="supplier-reseller-grid">
-            {(payables.data?.resellers ?? []).map((reseller) => (
-              <button
-                type="button"
-                key={reseller.id}
-                className={"supplier-reseller-card" + (selectedResellerId === reseller.id ? " active" : "")}
-                onClick={() => { setSelectedResellerId(selectedResellerId === reseller.id ? "" : reseller.id); setSearch(""); }}
-              >
-                <span className="supplier-reseller-card-top"><strong>{reseller.name}</strong><span>{reseller.salesCount} ventas</span></span>
-                <span className="supplier-reseller-debt-label">Debe al proveedor</span>
-                <strong className={reseller.balanceDue > 0 ? "supplier-reseller-balance due-text" : "supplier-reseller-balance"}>{money(reseller.balanceDue)}</strong>
-                <span className="supplier-reseller-stats">Costo vendido {money(reseller.totalDue)} · Abonado {money(reseller.totalPaid)}</span>
-                <span className="supplier-reseller-stats">Sus clientes le deben {money(reseller.customerBalanceDue)}</span>
-              </button>
-            ))}
+            {(payables.data?.resellers ?? []).map((reseller) => {
+              const resellerSales = sales.filter((sale) => sale.ownerId === reseller.id);
+              const due = fromCents(resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0));
+              const cost = fromCents(resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0));
+              const paid = fromCents(resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0));
+              const customerBalance = resellerSales.reduce((sum, sale) => sum + sale.customerBalanceDue, 0);
+              return (
+                <button
+                  type="button"
+                  key={reseller.id}
+                  className={"supplier-reseller-card" + (selectedResellerId === reseller.id ? " active" : "")}
+                  onClick={() => { setSelectedResellerId(selectedResellerId === reseller.id ? "" : reseller.id); setSearch(""); }}
+                >
+                  <span className="supplier-reseller-card-top"><strong>{reseller.name}</strong><span>{resellerSales.length} ventas</span></span>
+                  <span className="supplier-reseller-debt-label">Debe al proveedor</span>
+                  <strong className={due > 0 ? "supplier-reseller-balance due-text" : "supplier-reseller-balance"}>{money(due)}</strong>
+                  <span className="supplier-reseller-stats">Costo vendido {money(cost)} · Abonado {money(paid)}</span>
+                  <span className="supplier-reseller-stats">Sus clientes le deben {money(customerBalance)}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
       ) : null}
