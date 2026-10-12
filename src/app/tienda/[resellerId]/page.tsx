@@ -92,7 +92,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
 
   const reseller = await UserModel.findOne({
     _id: resellerId,
-    role: "RESELLER",
+    role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
     .select("_id firstName lastName")
