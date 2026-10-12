@@ -24,7 +24,7 @@ type SupplierSaleItem = {
 };
 type SaleRecord = {
   _id: mongoose.Types.ObjectId;
-  ownerId: mongoose.Types.ObjectId | string;
+  ownerId: mongoose.Types.ObjectId;
   saleNumber: string;
   customerSnapshot?: Snapshot;
   items: SupplierSaleItem[];
