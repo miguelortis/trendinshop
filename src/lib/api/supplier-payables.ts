@@ -184,13 +184,11 @@ export async function listSupplierPayables(userId: string, userRole: string) {
       sales = resellerIds.length
         ? await SaleModel.find({ ownerId: { $in: resellerIds }, isActive: true })
             .sort({ createdAt: -1 })
-            .limit(1000)
             .lean() as unknown as SaleRecord[]
         : [];
     } else {
       sales = await SaleModel.find({ ownerId: userId, isActive: true })
         .sort({ createdAt: -1 })
-        .limit(500)
         .lean() as unknown as SaleRecord[];
       const self = await UserModel.findById(userId)
         .select("_id firstName lastName phone email")
@@ -258,7 +256,6 @@ export async function listSupplierPayments(userId: string, userRole: string) {
     const filter = userRole === "ADMIN" ? {} : { resellerId: userId };
     const payments = await ResellerSupplierPaymentModel.find(filter)
       .sort({ createdAt: -1 })
-      .limit(500)
       .lean() as unknown as SupplierPaymentRecord[];
 
     const saleIds = [...new Set(payments.map((payment) => String(payment.saleId)))];
