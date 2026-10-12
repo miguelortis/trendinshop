@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Package, Plus, Search, ShoppingBag, Trash2, X } from "lucide-react";
+import { Check, Copy, ExternalLink, Package, Plus, Search, ShoppingBag, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
@@ -54,6 +54,7 @@ export default function ResellerCatalogPage() {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [actionError, setActionError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
 
   const catalog = useQuery({
     queryKey: ["reseller-catalog"],
@@ -123,6 +124,19 @@ export default function ResellerCatalogPage() {
     });
   }
 
+  async function handleCopyPublicCatalog() {
+    if (!user?.id) return;
+    const shareUrl = window.location.origin + "/tienda/" + user.id;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setActionError("");
+    } catch {
+      setShareCopied(false);
+      setActionError("No pudimos copiar el enlace automáticamente. Abre “Ver catálogo público” y copia la dirección del navegador.");
+    }
+  }
+
   if (userLoading) {
     return <div className="dashboard-page"><div className="panel-card dashboard-loading">Cargando tu cuenta...</div></div>;
   }
@@ -151,11 +165,28 @@ export default function ResellerCatalogPage() {
 
   return (
     <div className="dashboard-page reseller-catalog-page">
-      <section className="page-heading">
+      <section className="page-heading reseller-catalog-heading">
         <div>
           <span className="page-kicker">Venta personalizada</span>
           <h1>Mi catálogo</h1>
           <p>Elige productos de tu proveedor y define el precio al que los ofrecerás a tus clientes.</p>
+        </div>
+        <div className="reseller-catalog-heading-actions">
+          <Link
+            href={"/tienda/" + user.id}
+            target="_blank"
+            rel="noreferrer"
+            className="product-card-action reseller-public-action"
+          >
+            <ExternalLink size={14} /> Ver catálogo público
+          </Link>
+          <button
+            type="button"
+            className="product-card-action primary reseller-share-button"
+            onClick={() => void handleCopyPublicCatalog()}
+          >
+            <Copy size={14} /> {shareCopied ? "Enlace copiado" : "Copiar enlace"}
+          </button>
         </div>
       </section>
 
