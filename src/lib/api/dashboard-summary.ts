@@ -134,35 +134,36 @@ export async function getDashboardSummary(userId: string, userRole: string) {
         : Promise.resolve(0),
     ]);
 
-    const supplierRows = supplierUserIds.length
-      ? await SaleModel.aggregate([
-          { $match: { ownerId: { $in: supplierUserIds }, isActive: true } },
-          { $unwind: "$items" },
-          {
-            $project: {
-              costCents: {
-                $multiply: [
-                  { $round: [{ $multiply: [{ $ifNull: ["$items.unitCost", 0] }, 100] }, 0] },
-                  { $ifNull: ["$items.quantity", 0] },
-                ],
-              },
-              paidCents: {
-                $round: [{ $multiply: [{ $ifNull: ["$items.supplierAmountPaid", 0] }, 100] }, 0],
-              },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalDueCents: { $sum: "$costCents" },
-              totalPaidCents: { $sum: "$paidCents" },
-              balanceDueCents: {
-                $sum: { $max: [0, { $subtract: ["$costCents", "$paidCents"] }] },
+    const supplierRows: { totalDueCents?: number; totalPaidCents?: number; balanceDueCents?: number }[] =
+      supplierUserIds.length
+        ? await SaleModel.aggregate([
+            { $match: { ownerId: { $in: supplierUserIds }, isActive: true } },
+            { $unwind: "$items" },
+            {
+              $project: {
+                costCents: {
+                  $multiply: [
+                    { $round: [{ $multiply: [{ $ifNull: ["$items.unitCost", 0] }, 100] }, 0] },
+                    { $ifNull: ["$items.quantity", 0] },
+                  ],
+                },
+                paidCents: {
+                  $round: [{ $multiply: [{ $ifNull: ["$items.supplierAmountPaid", 0] }, 100] }, 0],
+                },
               },
             },
-          },
-        ]).exec() as Promise<{ totalDueCents?: number; totalPaidCents?: number; balanceDueCents?: number }[]>
-      : [];
+            {
+              $group: {
+                _id: null,
+                totalDueCents: { $sum: "$costCents" },
+                totalPaidCents: { $sum: "$paidCents" },
+                balanceDueCents: {
+                  $sum: { $max: [0, { $subtract: ["$costCents", "$paidCents"] }] },
+                },
+              },
+            },
+          ]).exec()
+        : [];
 
     const month = monthlyRows[0] ?? {};
     const receivables = receivableRows[0] ?? {};
