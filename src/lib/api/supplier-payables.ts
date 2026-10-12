@@ -117,11 +117,14 @@ function methodLabel(method: PaymentMethod) {
 
 function normalizedItems(sale: SaleRecord, isResellerSale: boolean) {
   return (sale.items ?? []).map((item) => {
-    const costCents = Math.max(0, toCents(item.lineCostTotal));
+    const quantity = Math.max(0, Math.trunc(item.quantity));
+    const unitCostCents = Math.max(0, toCents(item.unitCost));
+    const costCents = unitCostCents * quantity;
     const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
     const paid = fromCents(paidCents);
-    // El saldo se deriva del costo real menos abonos, nunca de un saldo guardado que pueda estar obsoleto.
+    // La deuda usa el costo unitario capturado en la venta por su cantidad, nunca un saldo guardado.
     const due = isResellerSale ? fromCents(Math.max(0, costCents - paidCents)) : 0;
+    const wholesaleCost = fromCents(costCents);
     return {
       productId: String(item.productId),
       variantId: String(item.variantId),
@@ -129,12 +132,12 @@ function normalizedItems(sale: SaleRecord, isResellerSale: boolean) {
       productSku: item.productSku,
       variantLabel: item.variantLabel,
       variantSku: item.variantSku,
-      quantity: item.quantity,
+      quantity,
       unitPrice: item.unitPrice,
-      wholesaleUnitCost: item.unitCost,
+      wholesaleUnitCost: fromCents(unitCostCents),
       lineTotal: item.lineTotal,
-      wholesaleCost: item.lineCostTotal,
-      resellerProfit: fromCents(toCents(item.lineTotal) - toCents(item.lineCostTotal)),
+      wholesaleCost,
+      resellerProfit: fromCents(toCents(item.lineTotal) - costCents),
       supplierAmountPaid: fromCents(paid),
       supplierBalanceDue: fromCents(due),
     };
@@ -358,11 +361,20 @@ export async function registerSupplierPayment(request: Request, adminId: string,
       if (!reseller) fail("Esta venta no pertenece a un revendedor activo.", 409, "NOT_RESELLER_SALE");
 
       const lineBalances = sale.items.map((item) => {
-        const costCents = Math.max(0, toCents(item.lineCostTotal));
+        const quantity = Math.max(0, Math.trunc(item.quantity));
+        const costCents = Math.max(0, toCents(item.unitCost)) * quantity;
         const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
         const paid = fromCents(paidCents);
         const balance = fromCents(Math.max(0, costCents - paidCents));
-        return { item, paid, balance, remaining: balance };
+        return {
+          item,
+          paid,
+          balance,
+          remaining: balance,
+          costCents,
+          quantity,
+          costTotal: fromCents(costCents),
+        };
       });
       const balanceCents = lineBalances.reduce((sum, line) => sum + toCents(line.balance), 0);
       if (balanceCents <= 0) fail("Esta venta ya fue pagada al proveedor.", 409, "SUPPLIER_SALE_ALREADY_PAID");
@@ -372,7 +384,7 @@ export async function registerSupplierPayment(request: Request, adminId: string,
 
       let remaining = amountCents;
       const allocations: { productId: mongoose.Types.ObjectId; variantId: mongoose.Types.ObjectId; productTitle: string; variantLabel: string; amount: number }[] = [];
-      const updatedItems = lineBalances.map(({ item, paid, remaining: lineRemaining }) => {
+      const updatedItems = lineBalances.map(({ item, paid, remaining: lineRemaining, costTotal, quantity }) => {
         const applied = Math.min(toCents(lineRemaining), remaining);
         remaining -= applied;
         const nextPaid = toCents(paid) + applied;
@@ -390,12 +402,15 @@ export async function registerSupplierPayment(request: Request, adminId: string,
 
         return {
           ...item,
+          quantity,
+          lineCostTotal: costTotal,
+          lineProfit: fromCents(toCents(item.lineTotal) - toCents(costTotal)),
           supplierAmountPaid: fromCents(nextPaid),
           supplierBalanceDue: fromCents(nextBalance),
         };
       });
 
-      const totalDueCents = lineBalances.reduce((sum, line) => sum + toCents(line.item.lineCostTotal), 0);
+      const totalDueCents = lineBalances.reduce((sum, line) => sum + line.costCents, 0);
       const totalPaidCents = updatedItems.reduce((sum, item) => sum + toCents(item.supplierAmountPaid ?? 0), 0);
       const totalBalanceCents = updatedItems.reduce((sum, item) => sum + toCents(item.supplierBalanceDue ?? 0), 0);
 
