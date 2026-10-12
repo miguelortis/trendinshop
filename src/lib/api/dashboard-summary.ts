@@ -90,7 +90,7 @@ export async function getDashboardSummary(userId: string, userRole: string) {
             profit: { $sum: "$grossProfit" },
           },
         },
-      ]) as Promise<SummaryRow[]>,
+      ]).exec() as Promise<SummaryRow[]>,
       SaleModel.find(ownerSalesFilter)
         .select("saleNumber customerSnapshot total amountPaid balanceDue paymentStatus grossProfit createdAt items.productTitle items.variantLabel items.quantity")
         .sort({ createdAt: -1 })
@@ -105,14 +105,14 @@ export async function getDashboardSummary(userId: string, userRole: string) {
             balanceDue: { $sum: "$balanceDue" },
           },
         },
-      ]) as Promise<SummaryRow[]>,
+      ]).exec() as Promise<SummaryRow[]>,
       PublicOrderModel.countDocuments({
         isActive: true,
         status: "PENDING",
         ...(userRole === "ADMIN" ? {} : { resellerId: ownerObjectId }),
       }),
       userRole === "ADMIN"
-        ? UserModel.distinct("_id", { role: "RESELLER" }) as Promise<mongoose.Types.ObjectId[]>
+        ? UserModel.distinct("_id", { role: "RESELLER" }).exec() as Promise<mongoose.Types.ObjectId[]>
         : Promise.resolve([ownerObjectId]),
       userRole === "ADMIN"
         ? ProductVariantModel.aggregate([
@@ -126,7 +126,7 @@ export async function getDashboardSummary(userId: string, userRole: string) {
                 lowStockVariants: { $sum: { $cond: [{ $and: [{ $gt: ["$stock", 0] }, { $lte: ["$stock", 3] }] }, 1, 0] } },
               },
             },
-          ]) as Promise<SummaryRow[]>
+          ]).exec() as Promise<SummaryRow[]>
         : Promise.resolve([] as SummaryRow[]),
       userRole === "ADMIN" ? UserModel.countDocuments({ role: "RESELLER", isActive: true }) : Promise.resolve(0),
       userRole === "RESELLER"
@@ -161,7 +161,7 @@ export async function getDashboardSummary(userId: string, userRole: string) {
               },
             },
           },
-        ]) as { totalDueCents?: number; totalPaidCents?: number; balanceDueCents?: number }[]
+        ]).exec() as Promise<{ totalDueCents?: number; totalPaidCents?: number; balanceDueCents?: number }[]>
       : [];
 
     const month = monthlyRows[0] ?? {};
