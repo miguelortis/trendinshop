@@ -53,9 +53,21 @@ type SupplierSale = {
   note?: string;
   items: SupplierSaleItem[];
 };
+type SupplierResellerSummary = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  salesCount: number;
+  totalDue: number;
+  totalPaid: number;
+  balanceDue: number;
+  customerBalanceDue: number;
+};
 type SupplierPayablesResponse = {
   ok: true;
   role: "ADMIN" | "RESELLER";
+  resellers: SupplierResellerSummary[];
   summary: {
     salesCount: number;
     totalDue: number;
@@ -114,6 +126,7 @@ export default function SupplierPayablesPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [selectedResellerId, setSelectedResellerId] = useState("");
   const [selectedSale, setSelectedSale] = useState<SupplierSale | null>(null);
   const [form, setForm] = useState<PaymentForm>({ saleId: "", amount: "", method: "TRANSFER", note: "" });
   const [formError, setFormError] = useState("");
@@ -158,14 +171,17 @@ export default function SupplierPayablesPage() {
 
   const filteredSales = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return sales;
-    return sales.filter((sale) => [
+    return sales.filter((sale) => {
+      if (selectedResellerId && sale.ownerId !== selectedResellerId) return false;
+      if (!term) return true;
+      return [
       sale.saleNumber,
       sale.resellerName,
       sale.customerName,
       ...sale.items.map((item) => item.productTitle + " " + item.variantLabel + " " + item.productSku),
-    ].join(" ").toLowerCase().includes(term));
-  }, [sales, search]);
+      ].join(" ").toLowerCase().includes(term);
+    });
+  }, [sales, search, selectedResellerId]);
 
   function openPayment(sale: SupplierSale) {
     setSelectedSale(sale);
@@ -246,6 +262,31 @@ export default function SupplierPayablesPage() {
           <div className="stat-hint">{isAdmin ? "Precio al cliente menos costo mayorista" : "Precio de venta menos costo mayorista"}</div>
         </article>
       </section>
+
+      {isAdmin && (payables.data?.resellers.length ?? 0) > 0 ? (
+        <section className="supplier-reseller-overview">
+          <div className="supplier-overview-header">
+            <div><span className="panel-kicker">Estado de cuentas</span><h2>Saldo por revendedor</h2><p>Selecciona un revendedor para ver sus ventas y productos pendientes.</p></div>
+            {selectedResellerId ? <button type="button" className="secondary-button" onClick={() => setSelectedResellerId("")}>Ver todos</button> : null}
+          </div>
+          <div className="supplier-reseller-grid">
+            {(payables.data?.resellers ?? []).map((reseller) => (
+              <button
+                type="button"
+                key={reseller.id}
+                className={"supplier-reseller-card" + (selectedResellerId === reseller.id ? " active" : "")}
+                onClick={() => { setSelectedResellerId(selectedResellerId === reseller.id ? "" : reseller.id); setSearch(""); }}
+              >
+                <span className="supplier-reseller-card-top"><strong>{reseller.name}</strong><span>{reseller.salesCount} ventas</span></span>
+                <span className="supplier-reseller-debt-label">Debe al proveedor</span>
+                <strong className={reseller.balanceDue > 0 ? "supplier-reseller-balance due-text" : "supplier-reseller-balance"}>{money(reseller.balanceDue)}</strong>
+                <span className="supplier-reseller-stats">Costo vendido {money(reseller.totalDue)} · Abonado {money(reseller.totalPaid)}</span>
+                <span className="supplier-reseller-stats">Sus clientes le deben {money(reseller.customerBalanceDue)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {!isAdmin ? (
         <div className="supplier-reseller-note">
