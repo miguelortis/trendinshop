@@ -135,14 +135,26 @@ export default function SupplierPayablesPage() {
   const isAdmin = user?.role === "ADMIN";
 
   const payables = useQuery({
-    queryKey: ["supplier-payables"],
+    queryKey: ["supplier-payables", user?.id],
     enabled: !!user && (user.role === "ADMIN" || user.role === "RESELLER"),
-    queryFn: async () => (await api.get<SupplierPayablesResponse>("/supplier-payables")).data,
+    queryFn: async () => (await api.get<SupplierPayablesResponse>("/supplier-payables", {
+      headers: { "Cache-Control": "no-cache" },
+    })).data,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
   const payments = useQuery({
-    queryKey: ["supplier-payments"],
+    queryKey: ["supplier-payments", user?.id],
     enabled: !!user && (user.role === "ADMIN" || user.role === "RESELLER"),
-    queryFn: async () => (await api.get<SupplierPaymentsResponse>("/supplier-payments")).data.payments,
+    queryFn: async () => (await api.get<SupplierPaymentsResponse>("/supplier-payments", {
+      headers: { "Cache-Control": "no-cache" },
+    })).data.payments,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const recordPayment = useMutation({
