@@ -16,6 +16,7 @@ type SupplierSaleItem = {
   variantSku: string;
   quantity: number;
   unitPrice: number;
+  unitCost: number;
   lineTotal: number;
   lineCostTotal: number;
   lineProfit: number;
@@ -129,6 +130,7 @@ function normalizedItems(sale: SaleRecord, isResellerSale: boolean) {
       variantSku: item.variantSku,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      wholesaleUnitCost: item.unitCost,
       lineTotal: item.lineTotal,
       wholesaleCost: item.lineCostTotal,
       resellerProfit: fromCents(toCents(item.lineTotal) - toCents(item.lineCostTotal)),
