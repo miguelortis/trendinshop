@@ -242,6 +242,8 @@ export async function listSupplierPayables(userId: string, userRole: string) {
         resellersOwing: owingResellers.size,
       },
       sales: rows,
+    }, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
     console.error("[SUPPLIER_PAYABLES_LIST]", error);
@@ -302,6 +304,8 @@ export async function listSupplierPayments(userId: string, userRole: string) {
         })),
         createdAt: payment.createdAt,
       })),
+    }, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
     console.error("[SUPPLIER_PAYMENTS_LIST]", error);
