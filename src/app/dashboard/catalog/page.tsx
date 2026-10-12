@@ -141,21 +141,20 @@ export default function ResellerCatalogPage() {
     return <div className="dashboard-page"><div className="panel-card dashboard-loading">Cargando tu cuenta...</div></div>;
   }
 
-  if (user?.role !== "RESELLER") {
+  if (user?.role !== "RESELLER" && user?.role !== "ADMIN") {
     return (
       <div className="dashboard-page">
         <section className="page-heading">
           <div>
             <span className="page-kicker">Catálogo personal</span>
             <h1>Mi catálogo</h1>
-            <p>Esta sección es exclusiva para cuentas de revendedor.</p>
+            <p>Necesitas iniciar sesión con una cuenta válida para administrar un catálogo.</p>
           </div>
         </section>
         <div className="panel-card reseller-catalog-restricted">
           <ShoppingBag size={28} />
-          <strong>Gestiona los productos de tus revendedores</strong>
-          <span>Como administrador, publica y administra los productos del catálogo maestro.</span>
-          <Link href="/dashboard/products" className="primary-button">Ir a productos</Link>
+          <strong>No se puede abrir el catálogo personal</strong>
+          <span>Tu cuenta no tiene permisos para administrar este catálogo.</span>
         </div>
       </div>
     );
@@ -169,7 +168,7 @@ export default function ResellerCatalogPage() {
         <div>
           <span className="page-kicker">Venta personalizada</span>
           <h1>Mi catálogo</h1>
-          <p>Elige productos de tu proveedor y define el precio al que los ofrecerás a tus clientes.</p>
+          <p>Selecciona productos disponibles y define el precio al que los ofrecerás a tus clientes.</p>
         </div>
         <div className="reseller-catalog-heading-actions">
           <Link
