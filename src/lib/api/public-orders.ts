@@ -49,6 +49,20 @@ type UserRecord = {
   isActive: boolean;
 };
 
+type PublicProductForOrder = {
+  _id: mongoose.Types.ObjectId;
+  title: string;
+  sku: string;
+};
+
+type PublicVariantForOrder = {
+  _id: mongoose.Types.ObjectId;
+  productId: mongoose.Types.ObjectId;
+  label: string;
+  sku: string;
+  stock: number;
+};
+
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -155,10 +169,13 @@ export async function createPublicOrder(request: Request) {
     }).select("sellingPrice").lean() as unknown as { sellingPrice: number } | null;
     if (!catalogItem) return errorResponse("Este producto ya no está publicado en el catálogo.", 404, "PRODUCT_NOT_IN_CATALOG");
 
-    const [product, variant] = await Promise.all([
-      ProductModel.findOne({ _id: productId, isActive: true }).select("_id title sku").lean(),
-      ProductVariantModel.findOne({ _id: variantId, productId, isActive: true }).select("_id productId label sku stock").lean(),
-    ]);
+    const productPromise = ProductModel.findOne({ _id: productId, isActive: true })
+      .select("_id title sku")
+      .lean() as unknown as Promise<PublicProductForOrder | null>;
+    const variantPromise = ProductVariantModel.findOne({ _id: variantId, productId, isActive: true })
+      .select("_id productId label sku stock")
+      .lean() as unknown as Promise<PublicVariantForOrder | null>;
+    const [product, variant] = await Promise.all([productPromise, variantPromise]);
 
     if (!product || !variant) return errorResponse("El producto o variante ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
     if (variant.stock < quantity) {
