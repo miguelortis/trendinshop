@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import mongoose from "mongoose";
 import { notFound } from "next/navigation";
+import { PublicOrderForm } from "@/components/catalog/PublicOrderForm";
 import { ShareProductActions } from "@/components/catalog/ShareProductActions";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { ProductModel } from "@/models/Product";
@@ -19,6 +20,7 @@ type SellerRecord = {
   _id: mongoose.Types.ObjectId;
   firstName: string;
   lastName: string;
+  phone: string;
 };
 
 type CatalogItemRecord = {
@@ -53,6 +55,7 @@ type VariantRecord = {
 
 type PublicProductData = {
   sellerName: string;
+  sellerPhone: string;
   product: {
     id: string;
     title: string;
@@ -61,7 +64,7 @@ type PublicProductData = {
     images: ProductImageRecord[];
     sellingPrice: number;
     available: boolean;
-    variants: string[];
+    variants: { id: string; label: string; stock: number }[];
   };
 };
 
@@ -92,7 +95,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
-    .select("_id firstName lastName")
+    .select("_id firstName lastName phone")
     .lean() as unknown as SellerRecord | null;
 
   if (!seller) return null;
@@ -131,6 +134,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
 
   return {
     sellerName: [seller.firstName, seller.lastName].filter(Boolean).join(" "),
+    sellerPhone: seller.phone ?? "",
     product: {
       id: String(product._id),
       title: product.title,
@@ -139,7 +143,11 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
       images,
       sellingPrice: catalogItem.sellingPrice,
       available: availableVariants.length > 0,
-      variants: availableVariants.map(variantLabel),
+      variants: availableVariants.map((variant) => ({
+        id: String(variant._id),
+        label: variantLabel(variant),
+        stock: variant.stock,
+      })),
     },
   };
 }
@@ -240,14 +248,15 @@ export default async function PublicProductPage({ params }: PageProps) {
 
             {product.description ? <p className="public-product-description">{product.description}</p> : null}
 
-            {product.variants.length ? (
-              <div className="public-product-variant-list">
-                <strong>Opciones disponibles</strong>
-                <div className="public-catalog-variants">
-                  {product.variants.map((variant, index) => <span key={variant + "-" + index}>{variant}</span>)}
-                </div>
-              </div>
-            ) : null}
+            <PublicOrderForm
+              resellerId={resellerId}
+              sellerName={sellerName}
+              sellerPhone={data.sellerPhone}
+              productId={product.id}
+              productTitle={product.title}
+              sellingPrice={product.sellingPrice}
+              variants={product.variants}
+            />
 
             <div className="public-product-share-panel">
               <strong>Comparte este producto</strong>
