@@ -6,6 +6,7 @@ import Link from "next/link";
 import { type FormEvent, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { ShareProductActions } from "@/components/catalog/ShareProductActions";
 
 type CategoryRef = { _id?: string; name: string; slug?: string };
 type CatalogProduct = {
@@ -350,6 +351,14 @@ export default function ResellerCatalogPage() {
                       )}
                     </div>
                   )}
+                  {item && !isEditing ? (
+                    <ShareProductActions
+                      title={product.title}
+                      description={product.description || product.title}
+                      productUrl={"/tienda/" + user.id + "/producto/" + product._id}
+                      imageUrl={primaryImage?.url}
+                    />
+                  ) : null}
                 </div>
               </article>
             );
