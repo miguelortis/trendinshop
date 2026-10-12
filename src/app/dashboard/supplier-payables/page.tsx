@@ -26,6 +26,7 @@ type SupplierSaleItem = {
   variantSku: string;
   quantity: number;
   unitPrice: number;
+  wholesaleUnitCost: number;
   lineTotal: number;
   wholesaleCost: number;
   resellerProfit: number;
@@ -331,9 +332,9 @@ export default function SupplierPayablesPage() {
                         <strong>{item.productTitle}</strong>
                         <span>{item.variantLabel} · SKU {item.variantSku} · Cantidad: {item.quantity}</span>
                       </div>
-                      <div className="supplier-line-financial"><span>Vendió a</span><strong>{money(item.unitPrice)} / unidad</strong><small>Total {money(item.lineTotal)}</small></div>
-                      <div className="supplier-line-financial"><span>Costo mayorista</span><strong>{money(item.wholesaleCost)}</strong><small>Ganancia: {money(item.resellerProfit)}</small></div>
-                      <div className="supplier-line-financial due"><span>{isAdmin ? "Te debe esta línea" : "Pendiente de esta línea"}</span><strong>{money(item.supplierBalanceDue)}</strong><small>Abonado: {money(item.supplierAmountPaid)}</small></div>
+                      <div className="supplier-line-financial"><span>Precio al cliente / unidad</span><strong>{money(item.unitPrice)}</strong><small>Venta total: {money(item.lineTotal)}</small></div>
+                      <div className="supplier-line-financial"><span>Costo mayorista / unidad</span><strong>{money(item.wholesaleUnitCost)}</strong><small>Costo total: {money(item.wholesaleCost)}</small></div>
+                      <div className="supplier-line-financial due"><span>{isAdmin ? "Deuda mayorista restante" : "Pendiente al proveedor"}</span><strong>{money(item.supplierBalanceDue)}</strong><small>Abonado: {money(item.supplierAmountPaid)} · Ganancia total: {money(item.resellerProfit)}</small></div>
                     </div>
                   ))}
                 </div>
