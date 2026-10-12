@@ -18,14 +18,14 @@ function parseSellingPrice(value: unknown) {
   return Number.isFinite(price) && price > 0 ? price : null;
 }
 
-function requireReseller(userRole: string) {
-  return userRole === "RESELLER"
+function requireCatalogUser(userRole: string) {
+  return userRole === "RESELLER" || userRole === "ADMIN"
     ? null
-    : errorResponse("El catálogo personal está disponible solo para revendedores.", 403, "FORBIDDEN");
+    : errorResponse("Tu cuenta no tiene acceso al catálogo personal.", 403, "FORBIDDEN");
 }
 
 export async function listResellerCatalog(userId: string, userRole: string) {
-  const forbidden = requireReseller(userRole);
+  const forbidden = requireCatalogUser(userRole);
   if (forbidden) return forbidden;
 
   try {
@@ -76,7 +76,7 @@ export async function listResellerCatalog(userId: string, userRole: string) {
 }
 
 export async function addResellerCatalogItem(request: Request, userId: string, userRole: string) {
-  const forbidden = requireReseller(userRole);
+  const forbidden = requireCatalogUser(userRole);
   if (forbidden) return forbidden;
 
   try {
@@ -158,7 +158,7 @@ export async function updateResellerCatalogItem(
   userId: string,
   userRole: string,
 ) {
-  const forbidden = requireReseller(userRole);
+  const forbidden = requireCatalogUser(userRole);
   if (forbidden) return forbidden;
 
   if (!mongoose.isValidObjectId(itemId)) {
@@ -205,7 +205,7 @@ export async function removeResellerCatalogItem(
   userId: string,
   userRole: string,
 ) {
-  const forbidden = requireReseller(userRole);
+  const forbidden = requireCatalogUser(userRole);
   if (forbidden) return forbidden;
 
   if (!mongoose.isValidObjectId(itemId)) {
