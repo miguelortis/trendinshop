@@ -134,7 +134,7 @@ export async function getDashboardSummary(userId: string, userRole: string) {
         : Promise.resolve(0),
     ]);
 
-    const supplierRows: { totalDueCents?: number; totalPaidCents?: number; balanceDueCents?: number }[] =
+    const supplierRows: { totalDueCents?: number; totalPaidCents?: number }[] =
       supplierUserIds.length
         ? await SaleModel.aggregate([
             { $match: { ownerId: { $in: supplierUserIds }, isActive: true } },
@@ -153,13 +153,16 @@ export async function getDashboardSummary(userId: string, userRole: string) {
               },
             },
             {
+              // Coincide con supplier-payables: el abono de cada línea no puede superar su costo.
+              $set: {
+                paidCents: { $min: ["$costCents", { $max: [0, "$paidCents"] }] },
+              },
+            },
+            {
               $group: {
                 _id: null,
                 totalDueCents: { $sum: "$costCents" },
                 totalPaidCents: { $sum: "$paidCents" },
-                balanceDueCents: {
-                  $sum: { $max: [0, { $subtract: ["$costCents", "$paidCents"] }] },
-                },
               },
             },
           ]).exec()
@@ -200,7 +203,10 @@ export async function getDashboardSummary(userId: string, userRole: string) {
       supplierDebt: {
         totalDue: fromCents((supplierDebt.totalDueCents ?? 0) / 100),
         totalPaid: fromCents((supplierDebt.totalPaidCents ?? 0) / 100),
-        balanceDue: fromCents((supplierDebt.balanceDueCents ?? 0) / 100),
+        balanceDue: fromCents(Math.max(
+          0,
+          (supplierDebt.totalDueCents ?? 0) - (supplierDebt.totalPaidCents ?? 0),
+        ) / 100),
       },
       pendingOrders,
       activeResellers,
