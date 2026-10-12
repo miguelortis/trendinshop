@@ -1,71 +1,204 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDownLeft, ArrowUpRight, Boxes, CircleDollarSign, Clock3,
-  Plus, ShoppingBag, ShoppingCart, UsersRound,
+  ClipboardList, CreditCard, HandCoins, PackageCheck, Plus,
+  ShoppingBag, ShoppingCart, UsersRound,
 } from "lucide-react";
 import Link from "next/link";
+import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-const emptySales: never[] = [];
-const emptyStock: never[] = [];
+type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
+type DashboardSale = {
+  _id: string;
+  saleNumber: string;
+  customerName: string;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+  paymentStatus: PaymentStatus;
+  profit: number;
+  createdAt: string;
+  itemSummary: string;
+};
+type DashboardSummary = {
+  ok: true;
+  role: "ADMIN" | "RESELLER";
+  generatedAt: string;
+  monthly: { salesCount: number; salesTotal: number; grossProfit: number };
+  receivables: { count: number; balanceDue: number };
+  supplierDebt: { totalDue: number; totalPaid: number; balanceDue: number };
+  pendingOrders: number;
+  activeResellers: number;
+  catalogProductCount: number;
+  inventory: {
+    totalUnits: number;
+    variants: number;
+    outOfStockVariants: number;
+    lowStockVariants: number;
+  };
+  recentSales: DashboardSale[];
+};
+
+function money(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function dateLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function paymentStatusLabel(status: PaymentStatus) {
+  if (status === "PAID") return "Pagada";
+  if (status === "PARTIAL") return "Pago parcial";
+  return "Pendiente";
+}
+
+function paymentStatusClass(status: PaymentStatus) {
+  if (status === "PAID") return "paid";
+  if (status === "PARTIAL") return "partial";
+  return "unpaid";
+}
+
+function errorMessage(error: unknown) {
+  const value = error as { response?: { data?: { message?: string } } };
+  return value.response?.data?.message ?? "No pudimos cargar los datos del dashboard.";
+}
 
 export default function DashboardPage() {
-  const { data: user } = useCurrentUser();
+  const { data: user, isLoading: userLoading } = useCurrentUser();
   const isAdmin = user?.role === "ADMIN";
   const firstName = user?.firstName ?? "usuario";
   const roleLabel = isAdmin ? "administrador" : "revendedor";
 
+  const dashboardQuery = useQuery({
+    queryKey: ["dashboard-summary", user?.id],
+    enabled: !!user,
+    queryFn: async () => (await api.get<DashboardSummary>("/dashboard-summary", {
+      headers: { "Cache-Control": "no-cache" },
+    })).data,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const data = dashboardQuery.data;
+  const displayMoney = (value: number | undefined) => data ? money(value ?? 0) : "—";
+
   const stats = isAdmin
     ? [
-        { label: "Ventas del mes", value: "$0.00", change: "0 ventas", hint: "todavía no hay ventas registradas", icon: ShoppingCart, positive: false },
-        { label: "Por cobrar", value: "$0.00", change: "0 cuentas", hint: "sin cuentas pendientes", icon: CircleDollarSign, positive: false },
-        { label: "Inventario", value: "0", change: "0 productos", hint: "catálogo maestro vacío", icon: Boxes, positive: false },
-        { label: "Revendedores", value: "0", change: "activos", hint: "todavía no hay revendedores", icon: UsersRound, positive: false },
+        {
+          label: "Ventas del mes",
+          value: displayMoney(data?.monthly.salesTotal),
+          change: data ? String(data.monthly.salesCount) + " ventas" : "Actualizando",
+          hint: "Ventas directas de este mes",
+          icon: ShoppingCart,
+        },
+        {
+          label: "Clientes por cobrar",
+          value: displayMoney(data?.receivables.balanceDue),
+          change: data ? String(data.receivables.count) + " cuentas" : "Actualizando",
+          hint: "Saldo pendiente de tus clientes directos",
+          icon: CircleDollarSign,
+        },
+        {
+          label: "Deuda de revendedores",
+          value: displayMoney(data?.supplierDebt.balanceDue),
+          change: data ? String(data.activeResellers) + " activos" : "Actualizando",
+          hint: "Costo mayorista aún no liquidado",
+          icon: HandCoins,
+        },
+        {
+          label: "Pedidos pendientes",
+          value: data ? String(data.pendingOrders) : "—",
+          change: "Pedidos públicos",
+          hint: "Solicitudes que requieren revisión",
+          icon: ClipboardList,
+        },
       ]
     : [
-        { label: "Ventas del mes", value: "$0.00", change: "0 ventas", hint: "todavía no hay ventas registradas", icon: ShoppingCart, positive: false },
-        { label: "Ganancia estimada", value: "$0.00", change: "0 ventas", hint: "aparecerá al realizar ventas", icon: ArrowUpRight, positive: false },
-        { label: "Por cobrar", value: "$0.00", change: "0 cuentas", hint: "sin cuentas pendientes", icon: Clock3, positive: false },
-        { label: "Productos en catálogo", value: "0", change: "0 activos", hint: "añade productos para comenzar", icon: ShoppingBag, positive: false },
+        {
+          label: "Ventas del mes",
+          value: displayMoney(data?.monthly.salesTotal),
+          change: data ? String(data.monthly.salesCount) + " ventas" : "Actualizando",
+          hint: "Total vendido este mes",
+          icon: ShoppingCart,
+        },
+        {
+          label: "Ganancia estimada",
+          value: displayMoney(data?.monthly.grossProfit),
+          change: data ? String(data.monthly.salesCount) + " ventas" : "Actualizando",
+          hint: "Precio de venta menos costo mayorista",
+          icon: ArrowUpRight,
+        },
+        {
+          label: "Clientes por cobrar",
+          value: displayMoney(data?.receivables.balanceDue),
+          change: data ? String(data.receivables.count) + " cuentas" : "Actualizando",
+          hint: "Saldo que tus clientes aún deben",
+          icon: Clock3,
+        },
+        {
+          label: "Pendiente al proveedor",
+          value: displayMoney(data?.supplierDebt.balanceDue),
+          change: data ? money(data.supplierDebt.totalPaid) + " abonado" : "Actualizando",
+          hint: "Tu deuda mayorista pendiente",
+          icon: HandCoins,
+        },
       ];
 
   const quickActions = isAdmin
     ? [
-        { href: "/dashboard/products/new", title: "Crear producto", description: "Agrega un producto maestro al catálogo", icon: Plus, tone: "purple" },
+        { href: "/dashboard/products/new", title: "Crear producto", description: "Agrega un producto al catálogo maestro", icon: Plus, tone: "purple" },
         { href: "/dashboard/inventory", title: "Revisar inventario", description: "Consulta existencias y movimientos", icon: Boxes, tone: "blue" },
-        { href: "/dashboard/customers", title: "Buscar cliente", description: "Busca por cédula o teléfono", icon: UsersRound, tone: "green" },
+        { href: "/dashboard/orders", title: "Revisar pedidos", description: "Gestiona solicitudes del catálogo público", icon: ClipboardList, tone: "green" },
         { href: "/dashboard/sales/new", title: "Registrar venta", description: "Vende directamente a un cliente", icon: ShoppingCart, tone: "amber" },
       ]
     : [
-        { href: "/dashboard/products", title: "Explorar productos", description: "Revisa los productos disponibles", icon: ShoppingBag, tone: "purple" },
-        { href: "/dashboard/catalog", title: "Gestionar mi catálogo", description: "Elige qué productos quieres vender", icon: Plus, tone: "blue" },
+        { href: "/dashboard/catalog", title: "Gestionar mi catálogo", description: "Elige productos y define precios", icon: ShoppingBag, tone: "purple" },
+        { href: "/dashboard/orders", title: "Ver pedidos", description: "Revisa solicitudes de tus clientes", icon: ClipboardList, tone: "blue" },
         { href: "/dashboard/customers", title: "Buscar cliente", description: "Busca por cédula o teléfono", icon: UsersRound, tone: "green" },
-        { href: "/dashboard/sales/new", title: "Registrar venta", description: "Registra una nueva venta", icon: ShoppingCart, tone: "amber" },
+        { href: "/dashboard/sales/new", title: "Registrar venta", description: "Registra una venta directa", icon: ShoppingCart, tone: "amber" },
       ];
 
-  const steps = isAdmin
+  const financeLinks = isAdmin
     ? [
-        ["01", "Crea tu primer producto", "Define precio mayorista, fotos, variantes e inventario."],
-        ["02", "Configura tus métodos de pago", "Indica cómo recibir pagos de clientes y revendedores."],
-        ["03", "Realiza tu primera venta", "Registra la venta y lleva el control de lo cobrado y pendiente."],
+        { href: "/dashboard/receivables", label: "Deudas de tus clientes", amount: data ? money(data.receivables.balanceDue) : "—", detail: data ? String(data.receivables.count) + " cuentas pendientes" : "Consultando cuentas", icon: CreditCard },
+        { href: "/dashboard/supplier-payables", label: "Deudas de revendedores", amount: data ? money(data.supplierDebt.balanceDue) : "—", detail: data ? String(data.activeResellers) + " revendedores activos" : "Consultando cuentas", icon: HandCoins },
+        { href: "/dashboard/orders", label: "Pedidos por revisar", amount: data ? String(data.pendingOrders) : "—", detail: "Solicitudes recibidas en tu tienda", icon: ClipboardList },
       ]
     : [
-        ["01", "Explora los productos", "Revisa los productos disponibles de tu proveedor."],
-        ["02", "Añádelos a tu catálogo", "Define tu precio de venta y calcula tu ganancia."],
-        ["03", "Comparte y vende", "Comparte tu catálogo o un producto con tus clientes."],
+        { href: "/dashboard/receivables", label: "Tus clientes", amount: data ? money(data.receivables.balanceDue) : "—", detail: data ? String(data.receivables.count) + " cuentas por cobrar" : "Consultando cuentas", icon: CreditCard },
+        { href: "/dashboard/supplier-payables", label: "Tu deuda al proveedor", amount: data ? money(data.supplierDebt.balanceDue) : "—", detail: data ? money(data.supplierDebt.totalPaid) + " abonado" : "Consultando pagos", icon: HandCoins },
+        { href: "/dashboard/orders", label: "Pedidos pendientes", amount: data ? String(data.pendingOrders) : "—", detail: "Solicitudes de tus clientes", icon: ClipboardList },
       ];
 
   return (
     <div className="dashboard-page">
       <section className="page-heading">
         <div>
-          <span className="page-kicker">Resumen</span>
+          <span className="page-kicker">Resumen en tiempo real</span>
           <h1>Buenos días, {firstName} 👋</h1>
           <p>Aquí tienes una vista rápida de tu negocio como {roleLabel}.</p>
         </div>
-        <Link href="/dashboard/sales/new" className="primary-button"><Plus size={17} />Nueva venta</Link>
+        <Link href="/dashboard/sales/new" className="primary-button"><Plus size={17} /> Nueva venta</Link>
       </section>
+
+      {dashboardQuery.isError ? (
+        <div className="dashboard-summary-error" role="alert">
+          <span>{errorMessage(dashboardQuery.error)}</span>
+          <button type="button" className="secondary-button" onClick={() => void dashboardQuery.refetch()}>Actualizar</button>
+        </div>
+      ) : null}
 
       <section className="stats-grid">
         {stats.map((stat) => {
@@ -77,7 +210,7 @@ export default function DashboardPage() {
                 <span className="stat-change">{stat.change}</span>
               </div>
               <div className="stat-label">{stat.label}</div>
-              <div className="stat-value">{stat.value}</div>
+              <div className="stat-value">{userLoading || dashboardQuery.isLoading ? "…" : stat.value}</div>
               <div className="stat-hint">{stat.hint}</div>
             </article>
           );
@@ -87,17 +220,47 @@ export default function DashboardPage() {
       <section className="dashboard-grid-main">
         <article className="panel-card">
           <div className="panel-header">
-            <div><span className="panel-kicker">Actividad</span><h2>Ventas recientes</h2></div>
+            <div><span className="panel-kicker">Actividad real</span><h2>Ventas recientes</h2></div>
             <Link href="/dashboard/sales" className="text-link">Ver todas</Link>
           </div>
-          {emptySales.length === 0 ? (
+
+          {dashboardQuery.isLoading || userLoading ? (
+            <div className="dashboard-loading">Cargando actividad...</div>
+          ) : dashboardQuery.isError ? (
+            <div className="dashboard-empty compact">
+              <div className="dashboard-empty-icon"><ClipboardList size={19} /></div>
+              <strong>No pudimos cargar las ventas</strong>
+              <span>Comprueba tu conexión e inténtalo de nuevo.</span>
+            </div>
+          ) : data?.recentSales.length ? (
+            <div className="sales-list">
+              {data.recentSales.map((sale) => (
+                <article className="sale-row" key={sale._id}>
+                  <div className="sale-row-icon"><ClipboardList size={19} /></div>
+                  <div className="sale-row-main">
+                    <div className="sale-row-title">
+                      <strong>{sale.saleNumber}</strong>
+                      <span className={"sale-payment-status " + paymentStatusClass(sale.paymentStatus)}>{paymentStatusLabel(sale.paymentStatus)}</span>
+                    </div>
+                    <span className="sale-row-customer">{sale.customerName} · {dateLabel(sale.createdAt)}</span>
+                    <span className="sale-row-items">{sale.itemSummary || "Productos de la venta"}</span>
+                  </div>
+                  <div className="sale-row-financials">
+                    <strong>{money(sale.total)}</strong>
+                    <span>Recibido: {money(sale.amountPaid)}</span>
+                    {sale.balanceDue > 0 ? <span className="sale-row-due">Pendiente: {money(sale.balanceDue)}</span> : <span className="sale-row-paid">Saldada</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
             <div className="dashboard-empty">
               <div className="dashboard-empty-icon"><ShoppingCart size={20} /></div>
               <strong>Aún no hay ventas</strong>
-              <span>Cuando registres tu primera venta, aparecerá aquí con su estado de pago.</span>
+              <span>Cuando registres una venta, aparecerá aquí con sus productos y estado de pago.</span>
               <Link href="/dashboard/sales/new" className="secondary-action">Registrar primera venta</Link>
             </div>
-          ) : null}
+          )}
         </article>
 
         <article className="panel-card quick-panel">
@@ -119,34 +282,61 @@ export default function DashboardPage() {
       <section className="dashboard-grid-secondary">
         <article className="panel-card">
           <div className="panel-header">
-            <div><span className="panel-kicker">Inventario</span><h2>Necesita atención</h2></div>
-            <Link href="/dashboard/inventory" className="text-link">Ver inventario</Link>
+            <div><span className="panel-kicker">{isAdmin ? "Inventario central" : "Actividad comercial"}</span><h2>{isAdmin ? "Existencias que requieren atención" : "Actividad pendiente"}</h2></div>
+            <Link href={isAdmin ? "/dashboard/inventory" : "/dashboard/orders"} className="text-link">{isAdmin ? "Ver inventario" : "Ver pedidos"}</Link>
           </div>
-          {emptyStock.length === 0 ? (
-            <div className="dashboard-empty compact">
-              <div className="dashboard-empty-icon"><Boxes size={19} /></div>
-              <strong>Sin inventario todavía</strong>
-              <span>Cuando tengas productos con existencias, aquí aparecerán los que necesiten atención.</span>
+
+          {dashboardQuery.isLoading || userLoading ? (
+            <div className="dashboard-loading">Cargando pendientes...</div>
+          ) : isAdmin ? (
+            <div className="dashboard-attention-grid">
+              <div className="dashboard-attention-item">
+                <span className="dashboard-attention-icon"><Boxes size={17} /></span>
+                <div><strong>{data?.inventory.totalUnits ?? 0}</strong><span>Unidades disponibles</span></div>
+              </div>
+              <div className="dashboard-attention-item">
+                <span className="dashboard-attention-icon warning"><Clock3 size={17} /></span>
+                <div><strong>{data?.inventory.lowStockVariants ?? 0}</strong><span>Variantes con 1–3 unidades</span></div>
+              </div>
+              <div className="dashboard-attention-item">
+                <span className="dashboard-attention-icon danger"><PackageCheck size={17} /></span>
+                <div><strong>{data?.inventory.outOfStockVariants ?? 0}</strong><span>Variantes agotadas</span></div>
+              </div>
             </div>
-          ) : null}
+          ) : data?.pendingOrders ? (
+            <div className="dashboard-pending-order-callout">
+              <span className="dashboard-attention-icon"><ClipboardList size={18} /></span>
+              <div><strong>{data.pendingOrders} {data.pendingOrders === 1 ? "pedido pendiente" : "pedidos pendientes"}</strong><p>Revisa las solicitudes, confirma existencias y convierte los pedidos listos en ventas.</p></div>
+              <Link href="/dashboard/orders" className="secondary-action">Revisar pedidos</Link>
+            </div>
+          ) : (
+            <div className="dashboard-empty compact">
+              <div className="dashboard-empty-icon"><PackageCheck size={19} /></div>
+              <strong>No hay pedidos pendientes</strong>
+              <span>Cuando un cliente envíe una solicitud desde tu catálogo público, aparecerá aquí.</span>
+            </div>
+          )}
         </article>
 
         <article className="panel-card">
           <div className="panel-header">
-            <div><span className="panel-kicker">Primeros pasos</span><h2>Comienza con lo esencial</h2></div>
+            <div><span className="panel-kicker">Cuentas importantes</span><h2>{isAdmin ? "Dinero y pedidos por gestionar" : "Tus saldos y pedidos"}</h2></div>
           </div>
-          <div className="onboarding-list">
-            {steps.map(([number, title, description]) => (
-              <div className="onboarding-row" key={number}>
-                <span>{number}</span>
-                <div><strong>{title}</strong><p>{description}</p></div>
-              </div>
-            ))}
+          <div className="dashboard-finance-links">
+            {financeLinks.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link className="dashboard-finance-link" href={item.href} key={item.label}>
+                  <span className="dashboard-finance-icon"><Icon size={17} /></span>
+                  <span className="dashboard-finance-copy"><strong>{item.label}</strong><small>{item.detail}</small></span>
+                  <strong className="dashboard-finance-value">{item.amount}</strong>
+                </Link>
+              );
+            })}
           </div>
-          <div className="onboarding-note">
-            <ArrowDownLeft size={14} />
-            Tu dashboard se irá llenando automáticamente a medida que registres productos, ventas y pagos.
-          </div>
+          {dashboardQuery.dataUpdatedAt ? (
+            <p className="dashboard-updated-at">Actualizado: {dateLabel(data?.generatedAt ?? "")}</p>
+          ) : null}
         </article>
       </section>
     </div>
