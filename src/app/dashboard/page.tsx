@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowDownLeft, ArrowUpRight, Boxes, CircleDollarSign, Clock3,
+  ArrowUpRight, Boxes, CircleDollarSign, Clock3,
   ClipboardList, CreditCard, HandCoins, PackageCheck, Plus,
   ShoppingBag, ShoppingCart, UsersRound,
 } from "lucide-react";
