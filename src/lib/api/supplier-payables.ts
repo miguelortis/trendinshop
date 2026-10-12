@@ -344,7 +344,7 @@ export async function registerSupplierPayment(request: Request, adminId: string,
 
       if (!sale) fail("No encontramos esa venta.", 404, "SALE_NOT_FOUND");
 
-      const reseller = await UserModel.findOne({ _id: sale.ownerId, role: "RESELLER", isActive: true })
+      const reseller = await UserModel.findOne({ _id: sale.ownerId, role: "RESELLER" })
         .select("_id")
         .session(transactionSession)
         .lean();
