@@ -198,9 +198,10 @@ export async function listSupplierPayables(userId: string, userRole: string) {
       resellerUsers = self ? [self] : [];
     }
 
-    const resellerById = new Map<string, UserRecord>(
-      resellerUsers.map((reseller) => [String(reseller._id), reseller]),
-    );
+    const resellerById = new Map<string, UserRecord>();
+    for (const reseller of resellerUsers) {
+      resellerById.set(String(reseller._id), reseller);
+    }
     const rows = sales.map((sale) => serializeSale(
       sale,
       resellerById.get(String(sale.ownerId)),
@@ -274,9 +275,12 @@ export async function listSupplierPayments(userId: string, userRole: string) {
             .select("_id firstName lastName").lean() as unknown as Promise<UserRecord[]>
         : Promise.resolve([]),
     ]);
-    const salesById = new Map(sales.map((sale) => [String(sale._id), sale]));
-    const resellersById = new Map(resellers.map((reseller) => [String(reseller._id), reseller]));
-    const receiversById = new Map(receivers.map((receiver) => [String(receiver._id), receiver]));
+    const salesById = new Map<string, { _id: mongoose.Types.ObjectId; saleNumber: string }>();
+    for (const sale of sales) salesById.set(String(sale._id), sale);
+    const resellersById = new Map<string, UserRecord>();
+    for (const reseller of resellers) resellersById.set(String(reseller._id), reseller);
+    const receiversById = new Map<string, UserRecord>();
+    for (const receiver of receivers) receiversById.set(String(receiver._id), receiver);
 
     return NextResponse.json({
       ok: true,
