@@ -108,7 +108,7 @@ export async function getDashboardSummary(userId: string, userRole: string) {
       ]).exec() as Promise<SummaryRow[]>,
       PublicOrderModel.countDocuments({
         isActive: true,
-        status: "PENDING",
+        status: { $in: ["PENDING", "IN_PROGRESS"] },
         ...(userRole === "ADMIN" ? {} : { resellerId: ownerObjectId }),
       }),
       userRole === "ADMIN"
