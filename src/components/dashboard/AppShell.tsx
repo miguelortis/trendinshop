@@ -3,7 +3,7 @@
 import {
   BarChart3, Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList, HandCoins,
   LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen,
-  Settings, ShoppingBag, UsersRound, WalletCards, X,
+  Settings, ShoppingBag, ShoppingCart, UsersRound, WalletCards, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ const navSections = [
     { href: "/dashboard/catalog", label: "Mi catálogo", icon: ShoppingBag },
   ]},
   { label: "Ventas", items: [
+    { href: "/dashboard/orders", label: "Pedidos", icon: ShoppingCart },
     { href: "/dashboard/sales", label: "Ventas", icon: ClipboardList },
     { href: "/dashboard/customers", label: "Clientes", icon: UsersRound },
     { href: "/dashboard/receivables", label: "Por cobrar", icon: CircleDollarSign },
