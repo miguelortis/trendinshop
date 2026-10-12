@@ -236,7 +236,7 @@ export default async function PublicCatalogPage({ params }: PageProps) {
               const image = product.images.find((item) => item.isPrimary) ?? product.images[0];
               return (
                 <article className="public-catalog-card" key={product.id}>
-                  <div className="public-catalog-image">
+                  <Link href={"/tienda/" + resellerId + "/producto/" + product.id} className="public-catalog-image" aria-label={"Ver " + product.title}>
                     {image ? (
                       <img src={image.url} alt={image.alt || product.title} loading="lazy" decoding="async" />
                     ) : (
@@ -247,10 +247,10 @@ export default async function PublicCatalogPage({ params }: PageProps) {
                     <span className={product.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>
                       {product.available ? "Disponible" : "Agotado"}
                     </span>
-                  </div>
+                  </Link>
                   <div className="public-catalog-card-body">
                     <span className="public-catalog-category">{product.category}</span>
-                    <h2>{product.title}</h2>
+                    <h2><Link href={"/tienda/" + resellerId + "/producto/" + product.id}>{product.title}</Link></h2>
                     {product.description ? <p className="public-catalog-description">{product.description}</p> : null}
                     {product.variants.length ? (
                       <div className="public-catalog-variants" aria-label="Variantes disponibles">
