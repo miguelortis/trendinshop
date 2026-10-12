@@ -213,13 +213,13 @@ export async function listSupplierPayables(userId: string, userRole: string) {
     // Todos los totales monetarios se agregan en centavos enteros a partir de las líneas recalculadas.
     const totalDueCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
     const totalPaidCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
-    const balanceDueCents = rows.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
+    const balanceDueCents = Math.max(0, totalDueCents - totalPaidCents);
     const owingResellers = new Set(rows.filter((sale) => sale.supplierBalanceDue > 0).map((sale) => sale.ownerId));
     const resellerSummaries = resellerUsers.map((reseller) => {
       const resellerSales = rows.filter((sale) => sale.ownerId === String(reseller._id));
       const resellerTotalDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
       const resellerTotalPaidCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
-      const resellerBalanceDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
+      const resellerBalanceDueCents = Math.max(0, resellerTotalDueCents - resellerTotalPaidCents);
       const customerBalanceDueCents = resellerSales.reduce((sum, sale) => sum + toCents(sale.customerBalanceDue), 0);
       return {
         id: String(reseller._id),
