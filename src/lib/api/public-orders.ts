@@ -259,7 +259,7 @@ export async function updatePublicOrder(request: Request, orderId: string, userI
 
   try {
     await connectMongoDB();
-    const filter: Record<string, unknown> = { _id: orderId, isActive: true };
+    const filter: Record<string, any> = { _id: orderId, isActive: true };
     if (userRole !== "ADMIN") filter.resellerId = userId;
 
     const order = await PublicOrderModel.findOne(filter);
@@ -290,7 +290,7 @@ async function convertPublicOrderToSale(orderId: string, userId: string, userRol
 
   try {
     await connectMongoDB();
-    const filter: Record<string, unknown> = { _id: orderId, isActive: true, status: { $in: ["PENDING", "IN_PROGRESS"] } };
+    const filter: Record<string, any> = { _id: orderId, isActive: true, status: { $in: ["PENDING", "IN_PROGRESS"] } };
     filter.resellerId = userId;
     const order = await PublicOrderModel.findOne(filter).lean() as unknown as PublicOrderRecord | null;
     if (!order) {
