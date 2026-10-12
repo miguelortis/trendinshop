@@ -6,6 +6,7 @@ import { CustomerModel } from "@/models/Customer";
 import { InventoryMovementModel } from "@/models/InventoryMovement";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
+import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { SaleModel } from "@/models/Sale";
 import { SalePaymentModel } from "@/models/SalePayment";
@@ -243,6 +244,11 @@ export async function createSale(request: Request, userId: string, userRole: str
       return errorResponse("Añade al menos un producto y revisa las variantes y cantidades.");
     }
 
+    const sourcePublicOrderId = text(body.sourcePublicOrderId);
+    if (sourcePublicOrderId && !mongoose.isValidObjectId(sourcePublicOrderId)) {
+      return errorResponse("El pedido público de origen no es válido.", 400, "INVALID_PUBLIC_ORDER_ID");
+    }
+
     const customerId = text(body.customerId);
     if (customerId && !mongoose.isValidObjectId(customerId)) {
       return errorResponse("El cliente seleccionado no es válido.", 400, "INVALID_CUSTOMER_ID");
@@ -267,6 +273,36 @@ export async function createSale(request: Request, userId: string, userRole: str
     let createdSale: unknown = null;
 
     await transactionSession.withTransaction(async () => {
+      let sourceOrder: Awaited<ReturnType<typeof PublicOrderModel.findOne>> | null = null;
+      let effectiveLines = lines;
+      const sourceOrderPriceByVariant = new Map<string, number>();
+
+      if (sourcePublicOrderId) {
+        sourceOrder = await PublicOrderModel.findOne({
+          _id: sourcePublicOrderId,
+          resellerId: userId,
+          resellerRole: userRole,
+          isActive: true,
+          status: { $in: ["PENDING", "IN_PROGRESS"] },
+        }).session(transactionSession).exec();
+
+        if (!sourceOrder) {
+          fail("El pedido ya fue convertido, cancelado o no pertenece a tu catálogo.", 409, "PUBLIC_ORDER_NOT_CONVERTIBLE");
+        }
+
+        const orderLines = sourceOrder.items.map((item) => {
+          sourceOrderPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
+          return {
+            variantId: String(item.variantId),
+            quantity: Number(item.quantity),
+            unitPrice: item.unitPrice,
+          };
+        });
+        const parsedOrderLines = readSaleLines(orderLines);
+        if (!parsedOrderLines) fail("Los productos guardados en el pedido ya no son válidos.", 409, "PUBLIC_ORDER_ITEMS_INVALID");
+        effectiveLines = parsedOrderLines;
+      }
+
       let customer: CustomerRecord | null = null;
       if (customerId) {
         customer = await CustomerModel.findOne({
@@ -277,13 +313,13 @@ export async function createSale(request: Request, userId: string, userRole: str
         if (!customer) fail("No encontramos al cliente seleccionado en tu directorio.", 404, "CUSTOMER_NOT_FOUND");
       }
 
-      const variantIds = lines.map((line) => line.variantId);
+      const variantIds = effectiveLines.map((line) => line.variantId);
       const variants = await ProductVariantModel.find({
         _id: { $in: variantIds },
         isActive: true,
       }).session(transactionSession).lean() as unknown as VariantRecord[];
 
-      if (variants.length !== lines.length) {
+      if (variants.length !== effectiveLines.length) {
         fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
       }
 
@@ -308,7 +344,7 @@ export async function createSale(request: Request, userId: string, userRole: str
       const catalogByProductId = new Map<string, CatalogPriceRecord>();
       for (const item of resellerCatalogItems) catalogByProductId.set(String(item.productId), item);
 
-      const normalizedItems = lines.map((line) => {
+      const normalizedItems = effectiveLines.map((line) => {
         const variant = variantById.get(line.variantId);
         if (!variant) fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
         const product = productById.get(String(variant.productId));
@@ -321,11 +357,14 @@ export async function createSale(request: Request, userId: string, userRole: str
         const defaultPrice = catalogItem
           ? catalogItem.sellingPrice
           : (variant.wholesalePrice ?? product.wholesalePrice);
-        const unitPrice = userRole === "RESELLER" && catalogItem
-          ? parsePrice(defaultPrice)
-          : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
-              ? parsePrice(defaultPrice)
-              : parsePrice(line.unitPrice));
+        const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
+        const unitPrice = sourceOrderPrice !== undefined
+          ? parsePrice(sourceOrderPrice)
+          : userRole === "RESELLER" && catalogItem
+            ? parsePrice(defaultPrice)
+            : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
+                ? parsePrice(defaultPrice)
+                : parsePrice(line.unitPrice));
         if (unitPrice === null) fail("El precio de venta debe ser mayor que cero.", 400, "INVALID_PRICE");
 
         const unitCost = userRole === "ADMIN"
@@ -386,7 +425,16 @@ export async function createSale(request: Request, userId: string, userRole: str
               email: customer.email ?? "",
               address: customer.address ?? "",
             }
-          : { firstName: "Cliente ocasional", lastName: "" },
+          : sourceOrder
+            ? {
+                documentId: "",
+                firstName: sourceOrder.customer.firstName,
+                lastName: sourceOrder.customer.lastName ?? "",
+                phone: sourceOrder.customer.phone,
+                email: sourceOrder.customer.email ?? "",
+                address: sourceOrder.customer.address ?? "",
+              }
+            : { firstName: "Cliente ocasional", lastName: "" },
         items: normalizedItems.map((item) => ({
           productId: item.product._id,
           variantId: item.variant._id,
@@ -445,6 +493,13 @@ export async function createSale(request: Request, userId: string, userRole: str
           note: note ? "Pago inicial. " + note : "Pago inicial de la venta",
           receivedBy: userId,
         }], { session: transactionSession });
+      }
+
+      if (sourceOrder) {
+        sourceOrder.status = "CONVERTED";
+        sourceOrder.saleId = (createdSale as { _id: mongoose.Types.ObjectId })._id;
+        sourceOrder.convertedAt = new Date();
+        await sourceOrder.save({ session: transactionSession });
       }
     });
 
