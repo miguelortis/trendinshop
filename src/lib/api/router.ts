@@ -18,6 +18,7 @@ import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@
 import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
+import { getDashboardSummary } from "@/lib/api/dashboard-summary";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
@@ -63,6 +64,10 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
 
   const user = await getAuthenticatedUser(request);
   if (!user) return unauthorized();
+
+  if (resource === "dashboard-summary" && method === "GET") {
+    return getDashboardSummary(user.id, user.role);
+  }
 
   if (resource === "categories") {
     if (method === "GET") return listCategories();
