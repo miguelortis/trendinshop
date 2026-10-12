@@ -119,22 +119,25 @@ function calculateItemSupplierBalance(item: SupplierSaleItem) {
 }
 
 function normalizeSaleSupplierBalances(sale: SupplierSale): SupplierSale {
-  const items = sale.items.map((item) => ({
+  const items: SupplierSaleItem[] = sale.items.map((item): SupplierSaleItem => ({
     ...item,
     ...calculateItemSupplierBalance(item),
   }));
-  const supplierAmountDueCents = items.reduce((sum, item) => sum + toCents(item.wholesaleCost), 0);
-  const supplierAmountPaidCents = items.reduce((sum, item) => sum + toCents(item.supplierAmountPaid), 0);
+  const supplierAmountDueCents = items.reduce((sum: number, item) => sum + toCents(item.wholesaleCost), 0);
+  const supplierAmountPaidCents = items.reduce((sum: number, item) => sum + toCents(item.supplierAmountPaid), 0);
   const supplierBalanceDueCents = Math.max(0, supplierAmountDueCents - supplierAmountPaidCents);
+  const supplierPaymentStatus: SupplierSale["supplierPaymentStatus"] =
+    supplierBalanceDueCents <= 0
+      ? "PAID"
+      : supplierAmountPaidCents > 0 ? "PARTIAL" : "UNPAID";
+
   return {
     ...sale,
     items,
     supplierAmountDue: fromCents(supplierAmountDueCents),
     supplierAmountPaid: fromCents(supplierAmountPaidCents),
     supplierBalanceDue: fromCents(supplierBalanceDueCents),
-    supplierPaymentStatus: supplierBalanceDueCents <= 0
-      ? "PAID"
-      : supplierAmountPaidCents > 0 ? "PARTIAL" : "UNPAID",
+    supplierPaymentStatus,
   };
 }
 
@@ -219,7 +222,7 @@ export default function SupplierPayablesPage() {
     [payables.data?.sales],
   );
   const summary = useMemo(() => {
-    const totalDueCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierAmountDue), 0);
+    const totalDueCents = sales.reduce((sum: number, sale) => sum + toCents(sale.supplierAmountDue), 0);
     const totalPaidCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierAmountPaid), 0);
     const balanceDueCents = sales.reduce((sum, sale) => sum + toCents(sale.supplierBalanceDue), 0);
     const owingResellers = new Set(
