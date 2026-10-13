@@ -49,6 +49,7 @@ export default function SettingsPage() {
   const [storeDescription, setStoreDescription] = useState("");
   const [storeWhatsApp, setStoreWhatsApp] = useState("");
   const [storeSlug, setStoreSlug] = useState("");
+  const [savedStoreSlug, setSavedStoreSlug] = useState("");
   const [storeLogoUrl, setStoreLogoUrl] = useState("");
   const [logoLocalPreview, setLogoLocalPreview] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -70,6 +71,7 @@ export default function SettingsPage() {
         setStoreDescription(data.profile.storeDescription ?? "");
         setStoreWhatsApp(data.profile.storeWhatsApp ?? "");
         setStoreSlug(data.profile.storeSlug ?? "");
+        setSavedStoreSlug(data.profile.storeSlug ?? "");
         setStoreLogoUrl(data.profile.storeLogoUrl ?? "");
       })
       .catch((caught: unknown) => {
@@ -105,6 +107,7 @@ export default function SettingsPage() {
       setStoreDescription(response.data.profile.storeDescription ?? "");
       setStoreWhatsApp(response.data.profile.storeWhatsApp ?? "");
       setStoreSlug(response.data.profile.storeSlug ?? "");
+      setSavedStoreSlug(response.data.profile.storeSlug ?? "");
       setStoreLogoUrl(response.data.profile.storeLogoUrl ?? "");
       setProfileMessage(response.data.message ?? "Perfil comercial actualizado correctamente.");
     } catch (caught) {
@@ -154,7 +157,7 @@ export default function SettingsPage() {
     if (!user?.id || typeof window === "undefined") return;
     setCopyMessage("");
     try {
-      await navigator.clipboard.writeText(window.location.origin + "/tienda/" + (slugPreview(storeSlug) || user.id));
+      await navigator.clipboard.writeText(window.location.origin + "/tienda/" + (savedStoreSlug || user.id));
       setCopyMessage("Enlace copiado al portapapeles.");
     } catch {
       setCopyMessage("No pudimos copiar el enlace. Abre la tienda y copia su dirección desde el navegador.");
@@ -181,7 +184,7 @@ export default function SettingsPage() {
     }
   }
 
-  const publicStoreKey = slugPreview(storeSlug) || user?.id || "";
+  const publicStoreKey = savedStoreSlug || user?.id || "";
   const publicStoreUrl = typeof window !== "undefined" && publicStoreKey
     ? window.location.origin + "/tienda/" + publicStoreKey
     : "";
