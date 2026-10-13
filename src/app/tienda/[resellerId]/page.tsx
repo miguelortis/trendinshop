@@ -22,6 +22,8 @@ type ResellerRecord = {
   storeName?: string;
   storeDescription?: string;
   storeWhatsApp?: string;
+  storeLogoUrl?: string;
+  storeSlug?: string;
 };
 
 type CatalogItemRecord = {
@@ -68,7 +70,7 @@ type PublicCatalogProduct = {
 };
 
 type PublicCatalogData = {
-  reseller: { name: string; description: string; contactWhatsApp: string };
+  reseller: { id: string; name: string; description: string; contactWhatsApp: string; logoUrl: string; slug: string };
   products: PublicCatalogProduct[];
 };
 
@@ -94,18 +96,30 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
 
   await connectMongoDB();
 
+  const identityFilter = mongoose.isValidObjectId(resellerId)
+    ? { $or: [{ _id: resellerId }, { storeSlug: resellerId }] }
+    : { storeSlug: resellerId };
   const reseller = await UserModel.findOne({
-    _id: resellerId,
+    ...identityFilter,
     role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
-    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp")
+    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp storeLogoUrl storeSlug")
     .lean() as unknown as ResellerRecord | null;
 
   if (!reseller) return null;
   const resellerName = reseller.storeName?.trim() || [reseller.firstName, reseller.lastName].filter(Boolean).join(" ");
   const resellerDescription = reseller.storeDescription?.trim() ?? "";
   const contactWhatsApp = reseller.storeWhatsApp?.trim() || reseller.phone?.trim() || "";
+  const logoUrl = reseller.storeLogoUrl ? safeImageUrl(reseller.storeLogoUrl) : "";
+  const identity = {
+    id: String(reseller._id),
+    name: resellerName,
+    description: resellerDescription,
+    contactWhatsApp,
+    logoUrl,
+    slug: reseller.storeSlug?.trim() || String(reseller._id),
+  };
 
   const catalogItems = await ResellerCatalogItemModel.find({
     resellerId: reseller._id,
@@ -116,7 +130,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
 
   if (!catalogItems.length) {
     return {
-      reseller: { name: resellerName, description: resellerDescription, contactWhatsApp },
+      reseller: identity,
       products: [],
     };
   }
@@ -173,7 +187,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
   });
 
   return {
-    reseller: { name: resellerName, description: resellerDescription, contactWhatsApp },
+    reseller: identity,
     products: productsForCatalog,
   };
 }
@@ -200,7 +214,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const description = catalog.reseller.description || (catalog.products.length
     ? "Explora " + catalog.products.length + (catalog.products.length === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
     : "Pronto habrá productos disponibles en el catálogo de " + catalog.reseller.name + ".");
-  const image = catalog.products.flatMap((product) => product.images)[0]?.url;
+  const image = catalog.products.flatMap((product) => product.images)[0]?.url || catalog.reseller.logoUrl;
   const images = image ? [{ url: image }] : undefined;
 
   return {
@@ -221,9 +235,13 @@ export default async function PublicCatalogPage({ params }: PageProps) {
     <main className="public-catalog-shell">
       <div className="public-catalog-container">
         <header className="public-catalog-nav">
-          <Link href="/" className="public-catalog-brand" aria-label="TrendinShop, inicio">
-            <span className="public-catalog-brand-mark">T</span>
-            <span>Trendin<span>Shop</span></span>
+          <Link href={"/tienda/" + catalog.reseller.slug} className="public-catalog-brand public-catalog-store-brand" aria-label={catalog.reseller.name}>
+            {catalog.reseller.logoUrl ? (
+              <img className="public-catalog-store-logo" src={catalog.reseller.logoUrl} alt={"Logotipo de " + catalog.reseller.name} />
+            ) : (
+              <span className="public-catalog-brand-mark">T</span>
+            )}
+            <span>{catalog.reseller.name || "Mi tienda"}</span>
           </Link>
           <Link href="/login" className="public-catalog-nav-link">Acceso de vendedor</Link>
         </header>
