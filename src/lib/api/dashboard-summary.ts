@@ -137,7 +137,13 @@ export async function getDashboardSummary(userId: string, userRole: string) {
             },
           ]).exec() as Promise<SummaryRow[]>
         : Promise.resolve([] as SummaryRow[]),
-      userRole === "ADMIN" ? UserModel.countDocuments({ role: "RESELLER", isActive: true }) : Promis    // Recalcula igual que /api/supplier-payables, con líneas de venta y centavos enteros.
+      userRole === "ADMIN" ? UserModel.countDocuments({ role: "RESELLER", isActive: true }) : Promise.resolve(0),
+      userRole === "RESELLER"
+        ? ResellerCatalogItemModel.countDocuments({ resellerId: ownerObjectId, isActive: true })
+        : Promise.resolve(0),
+    ]);
+
+    // Recalcula igual que /api/supplier-payables, con líneas de venta y centavos enteros.
     // Evita que pequeñas diferencias entre la agregación MongoDB y el cálculo normalizado
     // produzcan un balanceDue distinto entre la página financiera y el dashboard.
     const supplierSales: SupplierDebtSaleRecord[] = supplierUserIds.length
@@ -163,13 +169,6 @@ export async function getDashboardSummary(userId: string, userRole: string) {
         supplierTotalPaidCents += paidCents;
       }
     }
-
-    const month = monthlyRows[0] ?? {};: "$costCents" },
-                totalPaidCents: { $sum: "$paidCents" },
-              },
-            },
-          ]).exec()
-        : [];
 
     const month = monthlyRows[0] ?? {};
     const receivables = receivableRows[0] ?? {};
