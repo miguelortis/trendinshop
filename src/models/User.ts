@@ -13,11 +13,15 @@ const userSchema = new Schema(
     storeName: { type: String, trim: true, maxlength: 80, default: "" },
     storeDescription: { type: String, trim: true, maxlength: 300, default: "" },
     storeWhatsApp: { type: String, trim: true, maxlength: 40, default: "" },
+    storeLogoUrl: { type: String, trim: true, default: "" },
+    storeSlug: { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 40 },
     role: { type: String, enum: ["ADMIN", "RESELLER"], default: "RESELLER", required: true, index: true },
     isActive: { type: Boolean, default: true, required: true, index: true },
   },
   { timestamps: true, versionKey: false },
 );
+
+userSchema.index({ storeSlug: 1 }, { unique: true, sparse: true });
 
 export type User = InferSchemaType<typeof userSchema>;
 export const UserModel = models.User || model("User", userSchema);
