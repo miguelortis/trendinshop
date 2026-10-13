@@ -215,7 +215,7 @@ export default async function PublicCatalogPage({ params }: PageProps) {
   const { resellerId } = await params;
   const catalog = await getPublicCatalog(resellerId);
   if (!catalog) notFound();
-  const whatsappDigits = catalog.reseller.contactWhatsApp.replace(/\\D/g, "");
+  const whatsappDigits = catalog.reseller.contactWhatsApp.replace(/\D/g, "");
 
   return (
     <main className="public-catalog-shell">
