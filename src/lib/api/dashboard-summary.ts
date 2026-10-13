@@ -35,6 +35,15 @@ type SummaryRow = {
   variants?: number;
 };
 
+type SupplierDebtItemRecord = {
+  unitCost?: number;
+  quantity?: number;
+  supplierAmountPaid?: number;
+};
+type SupplierDebtSaleRecord = {
+  items?: SupplierDebtItemRecord[];
+};
+
 function toCents(value: number) {
   return Math.round((value + Number.EPSILON) * 100);
 }
@@ -128,40 +137,34 @@ export async function getDashboardSummary(userId: string, userRole: string) {
             },
           ]).exec() as Promise<SummaryRow[]>
         : Promise.resolve([] as SummaryRow[]),
-      userRole === "ADMIN" ? UserModel.countDocuments({ role: "RESELLER", isActive: true }) : Promise.resolve(0),
-      userRole === "RESELLER"
-        ? ResellerCatalogItemModel.countDocuments({ resellerId: ownerObjectId, isActive: true })
-        : Promise.resolve(0),
-    ]);
+      userRole === "ADMIN" ? UserModel.countDocuments({ role: "RESELLER", isActive: true }) : Promis    // Recalcula igual que /api/supplier-payables, con líneas de venta y centavos enteros.
+    // Evita que pequeñas diferencias entre la agregación MongoDB y el cálculo normalizado
+    // produzcan un balanceDue distinto entre la página financiera y el dashboard.
+    const supplierSales: SupplierDebtSaleRecord[] = supplierUserIds.length
+      ? await SaleModel.find({ ownerId: { $in: supplierUserIds }, isActive: true })
+          .select("items.unitCost items.quantity items.supplierAmountPaid")
+          .lean() as unknown as SupplierDebtSaleRecord[]
+      : [];
 
-    const supplierRows: { totalDueCents?: number; totalPaidCents?: number }[] =
-      supplierUserIds.length
-        ? await SaleModel.aggregate([
-            { $match: { ownerId: { $in: supplierUserIds }, isActive: true } },
-            { $unwind: "$items" },
-            {
-              $project: {
-                costCents: {
-                  $multiply: [
-                    { $round: [{ $multiply: [{ $ifNull: ["$items.unitCost", 0] }, 100] }, 0] },
-                    { $ifNull: ["$items.quantity", 0] },
-                  ],
-                },
-                paidCents: {
-                  $round: [{ $multiply: [{ $ifNull: ["$items.supplierAmountPaid", 0] }, 100] }, 0],
-                },
-              },
-            },
-            {
-              // Coincide con supplier-payables: el abono de cada línea no puede superar su costo.
-              $set: {
-                paidCents: { $min: ["$costCents", { $max: [0, "$paidCents"] }] },
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                totalDueCents: { $sum: "$costCents" },
+    let supplierTotalDueCents = 0;
+    let supplierTotalPaidCents = 0;
+
+    for (const sale of supplierSales) {
+      for (const item of sale.items ?? []) {
+        const quantity = Math.max(0, Math.trunc(item.quantity ?? 0));
+        const unitCostCents = Math.max(0, toCents(item.unitCost ?? 0));
+        const costCents = unitCostCents * quantity;
+        const paidCents = Math.min(
+          costCents,
+          Math.max(0, toCents(item.supplierAmountPaid ?? 0)),
+        );
+
+        supplierTotalDueCents += costCents;
+        supplierTotalPaidCents += paidCents;
+      }
+    }
+
+    const month = monthlyRows[0] ?? {};: "$costCents" },
                 totalPaidCents: { $sum: "$paidCents" },
               },
             },
@@ -171,7 +174,6 @@ export async function getDashboardSummary(userId: string, userRole: string) {
     const month = monthlyRows[0] ?? {};
     const receivables = receivableRows[0] ?? {};
     const inventory = inventoryRows[0] ?? {};
-    const supplierDebt = supplierRows[0] ?? {};
     const sales = recentSales.map((sale) => ({
       _id: String(sale._id),
       saleNumber: sale.saleNumber,
@@ -201,12 +203,10 @@ export async function getDashboardSummary(userId: string, userRole: string) {
         balanceDue: fromCents(toCents(receivables.balanceDue ?? 0)),
       },
       supplierDebt: {
-        totalDue: fromCents((supplierDebt.totalDueCents ?? 0) / 100),
-        totalPaid: fromCents((supplierDebt.totalPaidCents ?? 0) / 100),
-        balanceDue: fromCents(Math.max(
-          0,
-          (supplierDebt.totalDueCents ?? 0) - (supplierDebt.totalPaidCents ?? 0),
-        ) / 100),
+        calculationVersion: "supplier-debt-line-normalized-v3",
+        totalDue: fromCents(supplierTotalDueCents),
+        totalPaid: fromCents(supplierTotalPaidCents),
+        balanceDue: fromCents(Math.max(0, supplierTotalDueCents - supplierTotalPaidCents)),
       },
       pendingOrders,
       activeResellers,
