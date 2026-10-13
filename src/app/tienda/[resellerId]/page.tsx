@@ -92,7 +92,7 @@ function variantLabel(variant: VariantRecord) {
 }
 
 async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData | null> {
-  if (!mongoose.isValidObjectId(resellerId)) return null;
+  if (!resellerId.trim()) return null;
 
   await connectMongoDB();
 
