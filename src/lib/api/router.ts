@@ -19,7 +19,7 @@ import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
-import { getCommercialProfile, updateCommercialProfile } from "@/lib/api/profile";
+import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
@@ -73,6 +73,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "profile") {
     if (method === "GET" && !action) return getCommercialProfile(user.id);
     if (method === "PATCH" && !action) return updateCommercialProfile(request, user.id);
+    if (method === "POST" && action === "logo") return uploadStoreLogo(request, user.id);
   }
 
   if (resource === "categories") {
