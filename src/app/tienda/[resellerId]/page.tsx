@@ -18,6 +18,10 @@ type ResellerRecord = {
   _id: mongoose.Types.ObjectId;
   firstName: string;
   lastName: string;
+  phone?: string;
+  storeName?: string;
+  storeDescription?: string;
+  storeWhatsApp?: string;
 };
 
 type CatalogItemRecord = {
@@ -64,7 +68,7 @@ type PublicCatalogProduct = {
 };
 
 type PublicCatalogData = {
-  reseller: { name: string };
+  reseller: { name: string; description: string; contactWhatsApp: string };
   products: PublicCatalogProduct[];
 };
 
@@ -95,10 +99,13 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
-    .select("_id firstName lastName")
+    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp")
     .lean() as unknown as ResellerRecord | null;
 
   if (!reseller) return null;
+  const resellerName = reseller.storeName?.trim() || [reseller.firstName, reseller.lastName].filter(Boolean).join(" ");
+  const resellerDescription = reseller.storeDescription?.trim() ?? "";
+  const contactWhatsApp = reseller.storeWhatsApp?.trim() || reseller.phone?.trim() || "";
 
   const catalogItems = await ResellerCatalogItemModel.find({
     resellerId: reseller._id,
@@ -109,7 +116,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
 
   if (!catalogItems.length) {
     return {
-      reseller: { name: [reseller.firstName, reseller.lastName].filter(Boolean).join(" ") },
+      reseller: { name: resellerName, description: resellerDescription, contactWhatsApp },
       products: [],
     };
   }
@@ -166,7 +173,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
   });
 
   return {
-    reseller: { name: [reseller.firstName, reseller.lastName].filter(Boolean).join(" ") },
+    reseller: { name: resellerName, description: resellerDescription, contactWhatsApp },
     products: productsForCatalog,
   };
 }
@@ -190,9 +197,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   const title = "Catálogo de " + (catalog.reseller.name || "revendedor");
-  const description = catalog.products.length
+  const description = catalog.reseller.description || (catalog.products.length
     ? "Explora " + catalog.products.length + (catalog.products.length === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
-    : "Pronto habrá productos disponibles en el catálogo de " + catalog.reseller.name + ".";
+    : "Pronto habrá productos disponibles en el catálogo de " + catalog.reseller.name + ".");
   const image = catalog.products.flatMap((product) => product.images)[0]?.url;
   const images = image ? [{ url: image }] : undefined;
 
@@ -208,6 +215,7 @@ export default async function PublicCatalogPage({ params }: PageProps) {
   const { resellerId } = await params;
   const catalog = await getPublicCatalog(resellerId);
   if (!catalog) notFound();
+  const whatsappDigits = catalog.reseller.contactWhatsApp.replace(/\\D/g, "");
 
   return (
     <main className="public-catalog-shell">
@@ -223,7 +231,17 @@ export default async function PublicCatalogPage({ params }: PageProps) {
         <section className="public-catalog-hero">
           <span className="public-catalog-kicker">CATÁLOGO EN LÍNEA</span>
           <h1>{catalog.reseller.name || "Catálogo de productos"}</h1>
-          <p>Productos seleccionados y precios de venta publicados por este revendedor.</p>
+          <p>{catalog.reseller.description || "Productos seleccionados y precios de venta publicados por este revendedor."}</p>
+          {whatsappDigits ? (
+            <a
+              className="public-catalog-contact-link"
+              href={"https://wa.me/" + whatsappDigits}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Contactar por WhatsApp
+            </a>
+          ) : null}
           <div className="public-catalog-count">
             <span>{catalog.products.length}</span>
             {catalog.products.length === 1 ? " producto" : " productos"}
