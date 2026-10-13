@@ -21,6 +21,9 @@ type SellerRecord = {
   firstName: string;
   lastName: string;
   phone: string;
+  storeName?: string;
+  storeDescription?: string;
+  storeWhatsApp?: string;
 };
 
 type CatalogItemRecord = {
@@ -56,6 +59,7 @@ type VariantRecord = {
 type PublicProductData = {
   sellerName: string;
   sellerPhone: string;
+  sellerDescription: string;
   product: {
     id: string;
     title: string;
@@ -95,10 +99,13 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
-    .select("_id firstName lastName phone")
+    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp")
     .lean() as unknown as SellerRecord | null;
 
   if (!seller) return null;
+  const sellerName = seller.storeName?.trim() || [seller.firstName, seller.lastName].filter(Boolean).join(" ");
+  const sellerPhone = seller.storeWhatsApp?.trim() || seller.phone || "";
+  const sellerDescription = seller.storeDescription?.trim() ?? "";
 
   const catalogItem = await ResellerCatalogItemModel.findOne({
     resellerId: seller._id,
@@ -133,8 +140,9 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
       : "General";
 
   return {
-    sellerName: [seller.firstName, seller.lastName].filter(Boolean).join(" "),
-    sellerPhone: seller.phone ?? "",
+    sellerName,
+    sellerPhone,
+    sellerDescription,
     product: {
       id: String(product._id),
       title: product.title,
@@ -241,6 +249,7 @@ export default async function PublicProductPage({ params }: PageProps) {
             <span className="public-catalog-kicker">{product.category}</span>
             <h1>{product.title}</h1>
             <p className="public-product-seller">Publicado por <strong>{sellerName}</strong></p>
+            {data.sellerDescription ? <p className="public-product-seller-description">{data.sellerDescription}</p> : null}
             <div className="public-product-price">{money(product.sellingPrice)}</div>
             <span className={product.available ? "public-product-availability available" : "public-product-availability unavailable"}>
               {product.available ? "Disponible para pedir" : "Agotado por el momento"}
