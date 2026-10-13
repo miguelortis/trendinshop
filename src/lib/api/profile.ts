@@ -74,7 +74,7 @@ export async function updateCommercialProfile(request: Request, userId: string) 
     if (storeWhatsApp.length > 40) {
       return errorResponse("El WhatsApp no puede superar los 40 caracteres.", 400, "STORE_WHATSAPP_TOO_LONG");
     }
-    if (storeWhatsApp && storeWhatsApp.replace(/\\D/g, "").length < 7) {
+    if (storeWhatsApp && storeWhatsApp.replace(/\D/g, "").length < 7) {
       return errorResponse("Introduce un número de WhatsApp válido con al menos 7 dígitos.", 400, "INVALID_STORE_WHATSAPP");
     }
 
