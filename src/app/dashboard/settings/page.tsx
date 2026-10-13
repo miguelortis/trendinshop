@@ -1,8 +1,8 @@
 "use client";
 
-import { Copy, ExternalLink, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Copy, ExternalLink, ImagePlus, LoaderCircle, ShieldCheck, Store, UserRound, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -16,12 +16,25 @@ type CommercialProfile = {
   storeName: string;
   storeDescription: string;
   storeWhatsApp: string;
+  storeLogoUrl: string;
+  storeSlug: string;
 };
 type ProfileResponse = { ok: true; profile: CommercialProfile; message?: string };
 type RequestError = { response?: { data?: { message?: string } } };
 
 function requestMessage(error: unknown, fallback: string) {
   return (error as RequestError)?.response?.data?.message ?? fallback;
+}
+
+function slugPreview(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
 }
 
 export default function SettingsPage() {
@@ -35,11 +48,15 @@ export default function SettingsPage() {
   const [storeName, setStoreName] = useState("");
   const [storeDescription, setStoreDescription] = useState("");
   const [storeWhatsApp, setStoreWhatsApp] = useState("");
+  const [storeSlug, setStoreSlug] = useState("");
+  const [storeLogoUrl, setStoreLogoUrl] = useState("");
+  const [logoLocalPreview, setLogoLocalPreview] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
-  const [copyError, setCopyError] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
 
   useEffect(() => {
     if (!user?.id) return;
@@ -52,6 +69,8 @@ export default function SettingsPage() {
         setStoreName(data.profile.storeName ?? "");
         setStoreDescription(data.profile.storeDescription ?? "");
         setStoreWhatsApp(data.profile.storeWhatsApp ?? "");
+        setStoreSlug(data.profile.storeSlug ?? "");
+        setStoreLogoUrl(data.profile.storeLogoUrl ?? "");
       })
       .catch((caught: unknown) => {
         if (active) setProfileError(requestMessage(caught, "No pudimos cargar el perfil comercial."));
@@ -62,6 +81,12 @@ export default function SettingsPage() {
 
     return () => { active = false; };
   }, [user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (logoLocalPreview) URL.revokeObjectURL(logoLocalPreview);
+    };
+  }, [logoLocalPreview]);
 
   async function handleProfileSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,10 +99,13 @@ export default function SettingsPage() {
         storeName,
         storeDescription,
         storeWhatsApp,
+        storeSlug,
       });
       setStoreName(response.data.profile.storeName ?? "");
       setStoreDescription(response.data.profile.storeDescription ?? "");
       setStoreWhatsApp(response.data.profile.storeWhatsApp ?? "");
+      setStoreSlug(response.data.profile.storeSlug ?? "");
+      setStoreLogoUrl(response.data.profile.storeLogoUrl ?? "");
       setProfileMessage(response.data.message ?? "Perfil comercial actualizado correctamente.");
     } catch (caught) {
       setProfileError(requestMessage(caught, "No pudimos guardar el perfil comercial."));
@@ -86,14 +114,50 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleLogoSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setProfileError("");
+    setProfileMessage("");
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Selecciona un archivo de imagen.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError("El logotipo no puede superar los 5 MB.");
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setLogoLocalPreview(previewUrl);
+    setUploadingLogo(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await api.post<ProfileResponse>("/profile/logo", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setStoreLogoUrl(response.data.profile.storeLogoUrl ?? "");
+      setProfileMessage(response.data.message ?? "Logotipo actualizado correctamente.");
+    } catch (caught) {
+      setProfileError(requestMessage(caught, "No pudimos subir el logotipo."));
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setLogoLocalPreview("");
+      setUploadingLogo(false);
+    }
+  }
+
   async function copyStoreLink() {
     if (!user?.id || typeof window === "undefined") return;
-    setCopyError("");
+    setCopyMessage("");
     try {
-      await navigator.clipboard.writeText(window.location.origin + "/tienda/" + user.id);
-      setCopyError("Enlace copiado al portapapeles.");
+      await navigator.clipboard.writeText(window.location.origin + "/tienda/" + (slugPreview(storeSlug) || user.id));
+      setCopyMessage("Enlace copiado al portapapeles.");
     } catch {
-      setCopyError("No pudimos copiar el enlace. Abre la tienda y copia su dirección desde el navegador.");
+      setCopyMessage("No pudimos copiar el enlace. Abre la tienda y copia su dirección desde el navegador.");
     }
   }
 
@@ -117,13 +181,18 @@ export default function SettingsPage() {
     }
   }
 
+  const publicStoreKey = slugPreview(storeSlug) || user?.id || "";
+  const publicStoreUrl = typeof window !== "undefined" && publicStoreKey
+    ? window.location.origin + "/tienda/" + publicStoreKey
+    : "";
+
   return (
     <div className="dashboard-page">
       <section className="page-heading">
         <div>
           <span className="page-kicker">Sistema</span>
           <h1>Configuración</h1>
-          <p>Personaliza cómo se presenta tu negocio en el catálogo público.</p>
+          <p>Personaliza la identidad y el enlace de tu tienda pública.</p>
         </div>
       </section>
 
@@ -131,8 +200,33 @@ export default function SettingsPage() {
         <article className="panel-card settings-card settings-store-card">
           <div className="settings-icon"><Store size={18} /></div>
           <span className="panel-kicker">Tienda pública</span>
-          <h2>Perfil comercial</h2>
-          <p>Este nombre, descripción y WhatsApp se mostrarán en tu tienda pública. Si el nombre queda vacío, usaremos tu nombre y apellido.</p>
+          <h2>Identidad de tu tienda</h2>
+          <p>El nombre, logotipo y descripción distinguen tu tienda. El enlace personalizado debe ser único.</p>
+
+          <div className="settings-logo-section">
+            <div className="settings-logo-preview">
+              {logoLocalPreview || storeLogoUrl ? (
+                <img src={logoLocalPreview || storeLogoUrl} alt="Logotipo de la tienda" />
+              ) : (
+                <span><ImagePlus size={25} /></span>
+              )}
+              {uploadingLogo ? <span className="settings-logo-uploading"><LoaderCircle size={17} /> Subiendo</span> : null}
+            </div>
+            <div className="settings-logo-copy">
+              <strong>Logotipo</strong>
+              <p>Se verá en la cabecera del catálogo. Recomendado: PNG transparente, JPG o WebP, hasta 5 MB.</p>
+              <label className="secondary-button settings-logo-select">
+                <ImagePlus size={14} /> {uploadingLogo ? "Subiendo logotipo..." : storeLogoUrl ? "Cambiar logotipo" : "Subir logotipo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
+                  hidden
+                  disabled={loadingProfile || uploadingLogo}
+                  onChange={(event) => void handleLogoSelection(event)}
+                />
+              </label>
+            </div>
+          </div>
 
           <form onSubmit={handleProfileSave} className="settings-form">
             <label className="field">
@@ -174,10 +268,31 @@ export default function SettingsPage() {
               <small className="field-help">Incluye el código de país. Si lo dejas vacío, se usará el teléfono de tu cuenta.</small>
             </label>
 
+            <label className="field">
+              <span>Dirección personalizada</span>
+              <div className="settings-slug-input">
+                <span>/tienda/</span>
+                <input
+                  value={storeSlug}
+                  onChange={(event) => setStoreSlug(event.target.value)}
+                  maxLength={80}
+                  placeholder={user?.firstName ? slugPreview(user.firstName + "-" + user.lastName) : "mi-tienda"}
+                  disabled={loadingProfile || savingProfile}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                />
+              </div>
+              <small className="field-help">
+                {storeSlug.trim()
+                  ? "Tu enlace: " + (typeof window !== "undefined" ? window.location.origin : "") + "/tienda/" + slugPreview(storeSlug)
+                  : "Si queda vacío, se seguirá usando el enlace actual con tu identificador de cuenta."}
+              </small>
+            </label>
+
             {profileError ? <div className="auth-error" role="alert">{profileError}</div> : null}
             {profileMessage ? <div className="settings-success" role="status">{profileMessage}</div> : null}
 
-            <button className="primary-button settings-save-button" type="submit" disabled={loadingProfile || savingProfile}>
+            <button className="primary-button settings-save-button" type="submit" disabled={loadingProfile || savingProfile || uploadingLogo}>
               {loadingProfile ? "Cargando perfil..." : savingProfile ? "Guardando..." : "Guardar perfil comercial"}
             </button>
           </form>
@@ -185,12 +300,12 @@ export default function SettingsPage() {
           <div className="settings-store-link">
             <div>
               <span className="panel-kicker">Enlace público</span>
-              <strong>Tu catálogo para compartir</strong>
-              <p>Usa este enlace para enviar tu tienda a tus clientes.</p>
+              <strong>Comparte tu tienda</strong>
+              <p>{publicStoreUrl}</p>
             </div>
             {user?.id ? (
               <div className="settings-store-link-actions">
-                <a href={"/tienda/" + user.id} target="_blank" rel="noreferrer" className="secondary-button">
+                <a href={"/tienda/" + publicStoreKey} target="_blank" rel="noreferrer" className="secondary-button">
                   <ExternalLink size={14} /> Abrir tienda
                 </a>
                 <button type="button" onClick={copyStoreLink} className="secondary-button">
@@ -198,7 +313,7 @@ export default function SettingsPage() {
                 </button>
               </div>
             ) : null}
-            {copyError ? <small className="field-help" role="status">{copyError}</small> : null}
+            {copyMessage ? <small className="field-help" role="status">{copyMessage}</small> : null}
           </div>
         </article>
 
