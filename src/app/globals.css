@@ -3131,3 +3131,84 @@ button, input, select, textarea { font: inherit; }
   .settings-store-link-actions { flex-direction: column; align-items: stretch; }
   .settings-store-link-actions .secondary-button { width: 100%; }
 }
+
+
+
+/* Identidad visual y dirección personalizada de la tienda */
+.settings-logo-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid #eaecf0;
+  border-radius: 14px;
+  background: #fcfcfd;
+  margin-top: 17px;
+}
+.settings-logo-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 92px;
+  width: 92px;
+  height: 92px;
+  overflow: hidden;
+  border: 1px dashed #d0d5dd;
+  border-radius: 14px;
+  background:
+    linear-gradient(45deg,#f2f4f7 25%,transparent 25%),
+    linear-gradient(-45deg,#f2f4f7 25%,transparent 25%),
+    linear-gradient(45deg,transparent 75%,#f2f4f7 75%),
+    linear-gradient(-45deg,transparent 75%,#f2f4f7 75%),#fff;
+  background-size: 14px 14px;
+  background-position: 0 0,0 7px,7px -7px,-7px 0;
+}
+.settings-logo-preview > img { width: 100%; height: 100%; object-fit: contain; padding: 8px; background: rgba(255,255,255,.8); }
+.settings-logo-preview > span:not(.settings-logo-uploading) { color: #98a2b3; }
+.settings-logo-uploading {
+  position: absolute;
+  inset: auto 3px 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 2px;
+  border-radius: 7px;
+  color: #fff;
+  background: rgba(16,24,40,.84);
+  font-size: 9px;
+  font-weight: 800;
+}
+.settings-logo-copy { display: grid; align-content: center; justify-items: start; gap: 7px; min-width: 0; }
+.settings-logo-copy > strong { font-size: 12px; }
+.settings-logo-copy > p { margin: 0; color: #667085; font-size: 10px; line-height: 1.55; }
+.settings-logo-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 9px;
+  color: #344054;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.settings-logo-select:hover { border-color: #c9bcff; background: #fcfbff; }
+.settings-logo-select input { display: none; }
+.settings-slug-input { display: flex; align-items: center; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 11px; background: #fff; }
+.settings-slug-input:focus-within { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
+.settings-slug-input > span { align-self: stretch; display: inline-flex; align-items: center; padding: 0 10px; border-right: 1px solid #eaecf0; color: #667085; background: #f9fafb; font-size: 11px; white-space: nowrap; }
+.settings-slug-input > input { min-width: 0; width: 100%; border: 0 !important; box-shadow: none !important; outline: none; }
+.public-catalog-store-brand { max-width: 68%; min-width: 0; }
+.public-catalog-store-brand > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.public-catalog-store-logo { display: block; width: 42px; height: 42px; flex: 0 0 42px; padding: 3px; object-fit: contain; border-radius: 10px; border: 1px solid #eaecf0; background: #fff; }
+@media (max-width: 580px) {
+  .settings-logo-section { align-items: flex-start; padding: 12px; }
+  .settings-logo-preview { flex-basis: 74px; width: 74px; height: 74px; }
+  .settings-logo-select { max-width: 100%; font-size: 9px; }
+  .public-catalog-store-logo { width: 34px; height: 34px; flex-basis: 34px; }
+}
