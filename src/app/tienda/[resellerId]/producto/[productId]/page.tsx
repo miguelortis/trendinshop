@@ -24,6 +24,8 @@ type SellerRecord = {
   storeName?: string;
   storeDescription?: string;
   storeWhatsApp?: string;
+  storeLogoUrl?: string;
+  storeSlug?: string;
 };
 
 type CatalogItemRecord = {
@@ -57,9 +59,12 @@ type VariantRecord = {
 };
 
 type PublicProductData = {
+  sellerId: string;
   sellerName: string;
   sellerPhone: string;
   sellerDescription: string;
+  sellerLogoUrl: string;
+  sellerSlug: string;
   product: {
     id: string;
     title: string;
@@ -90,22 +95,27 @@ function variantLabel(variant: VariantRecord) {
 }
 
 async function getPublicProduct(resellerId: string, productId: string): Promise<PublicProductData | null> {
-  if (!mongoose.isValidObjectId(resellerId) || !mongoose.isValidObjectId(productId)) return null;
+  if (!resellerId.trim() || !mongoose.isValidObjectId(productId)) return null;
 
   await connectMongoDB();
 
+  const sellerIdentityFilter = mongoose.isValidObjectId(resellerId)
+    ? { $or: [{ _id: resellerId }, { storeSlug: resellerId }] }
+    : { storeSlug: resellerId };
   const seller = await UserModel.findOne({
-    _id: resellerId,
+    ...sellerIdentityFilter,
     role: { $in: ["RESELLER", "ADMIN"] },
     isActive: true,
   })
-    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp")
+    .select("_id firstName lastName phone storeName storeDescription storeWhatsApp storeLogoUrl storeSlug")
     .lean() as unknown as SellerRecord | null;
 
   if (!seller) return null;
   const sellerName = seller.storeName?.trim() || [seller.firstName, seller.lastName].filter(Boolean).join(" ");
   const sellerPhone = seller.storeWhatsApp?.trim() || seller.phone || "";
   const sellerDescription = seller.storeDescription?.trim() ?? "";
+  const sellerLogoUrl = seller.storeLogoUrl ? safeImageUrl(seller.storeLogoUrl) : "";
+  const sellerSlug = seller.storeSlug?.trim() || String(seller._id);
 
   const catalogItem = await ResellerCatalogItemModel.findOne({
     resellerId: seller._id,
@@ -140,9 +150,12 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
       : "General";
 
   return {
+    sellerId: String(seller._id),
     sellerName,
     sellerPhone,
     sellerDescription,
+    sellerLogoUrl,
+    sellerSlug,
     product: {
       id: String(product._id),
       title: product.title,
@@ -183,7 +196,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     ? product.description.slice(0, 150)
     : product.title + " disponible en el catálogo de " + sellerName + ".";
   const image = product.images.find((item) => item.isPrimary) ?? product.images[0];
-  const images = image ? [{ url: image.url, alt: image.alt || product.title }] : undefined;
+  const socialImage = image?.url || data.sellerLogoUrl;
+  const images = socialImage ? [{ url: socialImage, alt: image?.alt || product.title }] : undefined;
   const title = product.title + " | " + sellerName;
 
   return {
@@ -220,11 +234,15 @@ export default async function PublicProductPage({ params }: PageProps) {
     <main className="public-catalog-shell public-product-shell">
       <div className="public-catalog-container">
         <header className="public-catalog-nav">
-          <Link href="/" className="public-catalog-brand" aria-label="TrendinShop, inicio">
-            <span className="public-catalog-brand-mark">T</span>
-            <span>Trendin<span>Shop</span></span>
+          <Link href={"/tienda/" + data.sellerSlug} className="public-catalog-brand public-catalog-store-brand" aria-label={sellerName}>
+            {data.sellerLogoUrl ? (
+              <img className="public-catalog-store-logo" src={data.sellerLogoUrl} alt={"Logotipo de " + sellerName} />
+            ) : (
+              <span className="public-catalog-brand-mark">T</span>
+            )}
+            <span>{sellerName}</span>
           </Link>
-          <Link href={"/tienda/" + resellerId} className="public-catalog-nav-link">Ver todo el catálogo</Link>
+          <Link href={"/tienda/" + data.sellerSlug} className="public-catalog-nav-link">Ver todo el catálogo</Link>
         </header>
 
         <nav className="public-product-breadcrumb" aria-label="Ruta de navegación">
@@ -258,7 +276,7 @@ export default async function PublicProductPage({ params }: PageProps) {
             {product.description ? <p className="public-product-description">{product.description}</p> : null}
 
             <PublicOrderForm
-              resellerId={resellerId}
+              resellerId={data.sellerId}
               sellerName={sellerName}
               sellerPhone={data.sellerPhone}
               productId={product.id}
