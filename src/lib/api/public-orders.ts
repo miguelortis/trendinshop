@@ -299,7 +299,6 @@ export async function createPublicOrder(request: Request) {
 
       let resolvedCustomer: CustomerInput;
       let customerProfileId: mongoose.Types.ObjectId;
-      const customerProfileAlreadyExisted = Boolean(identity);
 
       if (identity) {
         // The database is authoritative for existing customers. The public
@@ -315,15 +314,10 @@ export async function createPublicOrder(request: Request) {
         customerProfileId = identity._id as mongoose.Types.ObjectId;
 
         const hasSubmittedValidToken = validSessionToken(identity.sessionTokenHashes, submittedToken);
-        customerSessionToken = rememberCustomer
-          ? (hasSubmittedValidToken ? submittedToken : randomCustomerSessionToken())
-          : "";
-        if (rememberCustomer && customerSessionToken && !hasSubmittedValidToken) {
-          identity.sessionTokenHashes = [
-            ...(identity.sessionTokenHashes ?? []),
-            hashToken(customerSessionToken),
-          ].slice(-5);
-        } else if (!rememberCustomer && hasSubmittedValidToken) {
+        // A public document-ID lookup is not sufficient proof to mint a new
+        // account-conversion credential. Preserve only a token already held by this device.
+        customerSessionToken = rememberCustomer && hasSubmittedValidToken ? submittedToken : "";
+        if (!rememberCustomer && hasSubmittedValidToken) {
           const usedTokenHash = hashToken(submittedToken);
           identity.sessionTokenHashes = (identity.sessionTokenHashes ?? [])
             .filter((value: string) => value !== usedTokenHash);
@@ -347,10 +341,10 @@ export async function createPublicOrder(request: Request) {
           email: registeredUser.email,
           address: submittedCustomer.address,
         };
-        customerSessionToken = rememberCustomer ? randomCustomerSessionToken() : "";
+        customerSessionToken = "";
         const createdIdentities = await CustomerIdentityModel.create([{
           ...resolvedCustomer,
-          sessionTokenHashes: customerSessionToken ? [hashToken(customerSessionToken)] : [],
+          sessionTokenHashes: [],
           convertedUserId: registeredUser._id,
           dataProcessingConsent: true,
           dataProcessingConsentAt: new Date(),
