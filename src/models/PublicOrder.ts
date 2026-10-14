@@ -18,11 +18,13 @@ const publicOrderItemSchema = new Schema(
 
 const publicOrderCustomerSchema = new Schema(
   {
+    documentId: { type: String, trim: true, uppercase: true, default: "" },
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, trim: true, default: "" },
     phone: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true, default: "" },
     address: { type: String, trim: true, default: "" },
+    customerProfileId: { type: Schema.Types.ObjectId, ref: "CustomerIdentity", default: null, index: true },
   },
   { _id: false },
 );
