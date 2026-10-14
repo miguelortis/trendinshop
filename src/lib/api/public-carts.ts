@@ -118,7 +118,7 @@ async function hydrateCartItems(
     const catalogPrice = priceByProductId.get(input.productId);
     const sameProduct = variant && String(variant.productId) === input.productId;
     const inCatalog = catalogPrice !== undefined && Boolean(product) && Boolean(sameProduct);
-    const unitPrice = inCatalog ? Number(catalogPrice) : Number(snapshot?.unitPrice ?? 0);
+    const unitPrice = inCatalog ? fromCents(toCents(Number(catalogPrice))) : Number(snapshot?.unitPrice ?? 0);
     const productTitle = product?.title ?? snapshot?.productTitle ?? "Producto no disponible";
     const variantLabel = variant?.label ?? snapshot?.variantLabel ?? "Variante no disponible";
     const stock = inCatalog && variant ? Math.max(0, variant.stock) : 0;
