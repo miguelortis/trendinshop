@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, CheckCircle2, ClipboardList, Copy, LoaderCircle, Minus, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardList, LoaderCircle, Minus, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 import {
