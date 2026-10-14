@@ -24,7 +24,6 @@ const publicOrderCustomerSchema = new Schema(
     phone: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true, default: "" },
     address: { type: String, trim: true, default: "" },
-    customerProfileId: { type: Schema.Types.ObjectId, ref: "CustomerIdentity", default: null, index: true },
   },
   { _id: false },
 );
@@ -35,6 +34,7 @@ const publicOrderSchema = new Schema(
     resellerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     resellerRole: { type: String, enum: ["ADMIN", "RESELLER"], required: true },
     customer: { type: publicOrderCustomerSchema, required: true },
+    customerProfileId: { type: Schema.Types.ObjectId, ref: "CustomerIdentity", default: null, index: true },
     items: { type: [publicOrderItemSchema], required: true, validate: (items: unknown[]) => items.length > 0 },
     subtotal: { type: Number, required: true, min: 0.01 },
     note: { type: String, trim: true, default: "" },
