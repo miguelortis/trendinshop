@@ -312,14 +312,21 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       return;
     }
 
-    // Debounce only on the document field, so status changes during a request
-    // cannot accidentally schedule a second lookup.
+    // Do not schedule another lookup while the current request is in flight
+    // or after this exact document ID has already been checked.
+    if (lookupState === "checking") return;
+    if (lookedUpDocumentId === documentId &&
+      (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) {
+      return;
+    }
+
+    // Wait until the user has stopped typing for two seconds.
     const timeout = window.setTimeout(() => {
       void lookupCustomer(documentId);
     }, 2000);
 
     return () => window.clearTimeout(timeout);
-  }, [customer.documentId, lookupCustomer]);
+  }, [customer.documentId, lookupCustomer, lookedUpDocumentId, lookupState]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
