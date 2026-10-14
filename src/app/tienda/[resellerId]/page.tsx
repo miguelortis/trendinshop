@@ -8,6 +8,7 @@ import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { UserModel } from "@/models/User";
+import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -235,17 +236,12 @@ export default async function PublicCatalogPage({ params }: PageProps) {
   return (
     <main className="public-catalog-shell">
       <div className="public-catalog-container">
-        <header className="public-catalog-nav">
-          <Link href={"/tienda/" + catalog.reseller.slug} className="public-catalog-brand public-catalog-store-brand" aria-label={catalog.reseller.name}>
-            {catalog.reseller.logoUrl ? (
-              <img className="public-catalog-store-logo" src={catalog.reseller.logoUrl} alt={"Logotipo de " + catalog.reseller.name} />
-            ) : (
-              <span className="public-catalog-brand-mark">T</span>
-            )}
-            <span>{catalog.reseller.name || "Mi tienda"}</span>
-          </Link>
-          <Link href="/login" className="public-catalog-nav-link">Acceso de vendedor</Link>
-        </header>
+        <PublicStorefrontHeader
+          resellerId={catalog.reseller.id}
+          storeSlug={catalog.reseller.slug}
+          storeName={catalog.reseller.name || "Mi tienda"}
+          logoUrl={catalog.reseller.logoUrl}
+        />
 
         <section className="public-catalog-hero">
           <span className="public-catalog-kicker">CATÁLOGO EN LÍNEA</span>
