@@ -185,12 +185,14 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           ? storedCustomerSession.token
           : "";
         setCustomerToken(savedToken);
+        setRememberData(Boolean(savedToken));
         setLookupState("found");
         setLookupMessage(response.data.message ?? "Encontramos un registro. Verifica que el nombre y apellido sean correctos.");
       } else {
         setCustomer({ ...blankCustomer, documentId });
         setKnownCustomer(false);
         setCustomerToken("");
+        setRememberData(false);
         setLookupState("not-found");
         setLookupMessage(response.data.message ?? "No encontramos un registro con esa cédula. Completa tus datos para continuar.");
       }
@@ -598,10 +600,12 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   <input type="checkbox" checked={notificationsEmailConsent} onChange={(event) => setNotificationsEmailConsent(event.target.checked)} disabled={busy} />
                   <span>Acepto recibir futuras actualizaciones de pedidos por correo cuando esta función esté disponible.</span>
                 </label>
-                <label className="public-cart-remember-row">
-                  <input type="checkbox" checked={rememberData} onChange={(event) => setRememberData(event.target.checked)} disabled={busy} />
-                  <span>Guardar una clave segura de este perfil en este dispositivo para facilitar un futuro registro de cuenta. No lo marques en un equipo compartido.</span>
-                </label>
+                {(!knownCustomer || Boolean(customerToken)) ? (
+                  <label className="public-cart-remember-row">
+                    <input type="checkbox" checked={rememberData} onChange={(event) => setRememberData(event.target.checked)} disabled={busy} />
+                    <span>Guardar una clave segura de este perfil en este dispositivo para facilitar un futuro registro de cuenta. No lo marques en un equipo compartido.</span>
+                  </label>
+                ) : null}
 
                 <div className="public-cart-checkout-totals">
                   <div><span>Artículos</span><strong>{totalQuantity(items)}</strong></div>
