@@ -91,6 +91,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   const [storedCustomerSession, setStoredCustomerSession] = useState<StoredCustomerSession | null>(null);
   const [trustedCustomer, setTrustedCustomer] = useState(false);
   const [rememberData, setRememberData] = useState(!shareToken);
+  const [acceptCustomerData, setAcceptCustomerData] = useState(false);
+  const [notificationsWhatsAppConsent, setNotificationsWhatsAppConsent] = useState(false);
+  const [notificationsEmailConsent, setNotificationsEmailConsent] = useState(false);
   const [lookupMessage, setLookupMessage] = useState("");
   const [orderError, setOrderError] = useState("");
   const [success, setSuccess] = useState<{ orderNumber: string; subtotal: number } | null>(null);
@@ -183,7 +186,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   }, []);
 
   useEffect(() => {
-    setRememberData(!shareToken);
+    setRememberData(false);
     try {
       const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
       if (!raw) return;
@@ -289,6 +292,10 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       setOrderError("Agrega al menos un producto al carrito.");
       return;
     }
+    if (!acceptCustomerData) {
+      setOrderError("Acepta el uso de tus datos para gestionar el pedido antes de continuar.");
+      return;
+    }
     if (hasUnavailable) {
       setOrderError("Hay productos sin existencias suficientes. Ajusta las cantidades antes de enviar el pedido.");
       return;
@@ -309,6 +316,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
         },
         customerSessionToken: trustedCustomer ? customerToken : undefined,
         rememberCustomer: rememberData,
+        customerDataConsent: acceptCustomerData,
+        notificationsWhatsAppConsent,
+        notificationsEmailConsent,
         note: customer.note,
       });
       setSuccess(response.data.order);
@@ -499,6 +509,18 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   <textarea value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} maxLength={500} rows={2} disabled={busy} placeholder="Indicaciones para el vendedor..." />
                 </label>
 
+                <label className="public-cart-remember-row">
+                  <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
+                  <span>Acepto que se guarden mis datos para gestionar este pedido y facilitar futuras compras. Este perfil no crea una cuenta de acceso ni tiene contraseña.</span>
+                </label>
+                <label className="public-cart-remember-row">
+                  <input type="checkbox" checked={notificationsWhatsAppConsent} onChange={(event) => setNotificationsWhatsAppConsent(event.target.checked)} disabled={busy} />
+                  <span>Acepto recibir futuras actualizaciones de pedidos por WhatsApp cuando esta función esté disponible.</span>
+                </label>
+                <label className="public-cart-remember-row">
+                  <input type="checkbox" checked={notificationsEmailConsent} onChange={(event) => setNotificationsEmailConsent(event.target.checked)} disabled={busy} />
+                  <span>Acepto recibir futuras actualizaciones de pedidos por correo cuando esta función esté disponible.</span>
+                </label>
                 <label className="public-cart-remember-row">
                   <input type="checkbox" checked={rememberData} onChange={(event) => setRememberData(event.target.checked)} disabled={busy} />
                   <span>Recordar mis datos en este dispositivo para futuras compras. No lo marques en un equipo compartido.</span>
