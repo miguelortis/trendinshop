@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowLeft, CheckCircle2, ClipboardList, Copy, LoaderCircle, Minus, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/client";
+import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 import {
   type PublicCartDraftItem,
   type PublicCartViewItem,
@@ -18,6 +19,7 @@ type Props = {
   storeSlug: string;
   storeName: string;
   sellerPhone: string;
+  logoUrl: string;
   shareToken: string;
 };
 type CartResponse = {
@@ -76,7 +78,7 @@ function totalQuantity(items: PublicCartViewItem[]) {
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
-export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerPhone, shareToken }: Props) {
+export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerPhone, logoUrl, shareToken }: Props) {
   const [items, setItems] = useState<PublicCartViewItem[]>([]);
   const [loadingCart, setLoadingCart] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -343,6 +345,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     return (
       <main className="public-catalog-shell">
         <div className="public-catalog-container">
+          <PublicStorefrontHeader resellerId={resellerId} storeSlug={storeSlug} storeName={storeName} logoUrl={logoUrl} />
           <div className="public-cart-result">
             <span className="public-cart-result-icon"><CheckCircle2 size={28} /></span>
             <span className="public-catalog-kicker">SOLICITUD REGISTRADA</span>
@@ -360,6 +363,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   return (
     <main className="public-catalog-shell public-cart-page">
       <div className="public-catalog-container">
+        <PublicStorefrontHeader resellerId={resellerId} storeSlug={storeSlug} storeName={storeName} logoUrl={logoUrl} />
         <nav className="public-cart-breadcrumb">
           <Link href={"/tienda/" + storeSlug}><ArrowLeft size={14} /> Seguir comprando</Link>
           <span>Carrito de {storeName}</span>
