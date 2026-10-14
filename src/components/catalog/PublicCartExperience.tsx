@@ -85,6 +85,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   const [cartError, setCartError] = useState("");
   const [cartMessage, setCartMessage] = useState("");
   const [shareMessage, setShareMessage] = useState("");
+  const [sharedUrl, setSharedUrl] = useState("");
   const [customer, setCustomer] = useState<CustomerForm>(blankCustomer);
   const [customerToken, setCustomerToken] = useState("");
   const [trustedCustomer, setTrustedCustomer] = useState(false);
@@ -247,10 +248,15 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
         items: draft(items),
       });
       const link = window.location.origin + "/tienda/" + storeSlug + "/carrito?share=" + response.data.token;
-      await navigator.clipboard.writeText(link);
+      setSharedUrl(link);
       setItems(response.data.items);
       writePublicCart(resellerId, draft(response.data.items));
-      setShareMessage("Enlace copiado. Cualquier persona con el enlace podrá revisar el carrito; caduca en 30 días.");
+      try {
+        await navigator.clipboard.writeText(link);
+        setShareMessage("Enlace copiado. Cualquier persona con el enlace podrá revisar el carrito; caduca en 30 días.");
+      } catch {
+        setShareMessage("Enlace listo. Cópialo desde el campo de abajo para enviarlo al cliente; caduca en 30 días.");
+      }
     } catch (error) {
       setCartError(messageFrom(error, "No pudimos compartir el carrito. Comprueba los permisos del navegador para copiar enlaces."));
     } finally {
@@ -378,6 +384,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
         {cartError ? <div className="public-cart-feedback error" role="alert">{cartError}</div> : null}
         {cartMessage ? <div className="public-cart-feedback success" role="status">{cartMessage}</div> : null}
         {shareMessage ? <div className="public-cart-feedback success" role="status">{shareMessage}</div> : null}
+        {sharedUrl ? <div className="public-cart-share-link"><label htmlFor="public-cart-shared-url">Enlace compartible</label><input id="public-cart-shared-url" value={sharedUrl} readOnly onFocus={(event) => event.currentTarget.select()} /><button type="button" className="public-cart-secondary-button" onClick={() => { void navigator.clipboard.writeText(sharedUrl).then(() => setShareMessage("Enlace copiado." )).catch(() => setShareMessage("Selecciona el enlace y cópialo manualmente.")); }}>Copiar de nuevo</button></div> : null}
 
         {loadingCart ? (
           <div className="public-cart-loading"><LoaderCircle className="public-order-spinner" size={24} /> Cargando carrito...</div>
