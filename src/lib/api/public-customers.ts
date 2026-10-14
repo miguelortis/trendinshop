@@ -12,9 +12,9 @@ function errorResponse(message: string, status = 404, code = "CUSTOMER_PROFILE_N
 
 export async function lookupPublicCustomer(request: Request) {
   try {
-    const url = new URL(request.url);
-    const documentId = normalizeCustomerDocumentId(url.searchParams.get("documentId"));
-    const token = url.searchParams.get("token")?.trim() ?? "";
+    const body = await request.json() as Record<string, unknown>;
+    const documentId = normalizeCustomerDocumentId(body.documentId);
+    const token = typeof body.token === "string" ? body.token.trim() : "";
     if (!documentId || documentId.length > 40 || !/^[a-f0-9]{64}$/i.test(token)) {
       return errorResponse("No pudimos recuperar los datos guardados en este dispositivo.");
     }
