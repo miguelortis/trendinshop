@@ -80,7 +80,7 @@ function serializeSeller(seller: SellerRecord) {
   };
 }
 async function findSeller(resellerId: string) {
-  if (!mongoose.isValidObjectId(resellerId)) return null;
+  if (!/^[a-f0-9]{24}$/i.test(resellerId)) return null;
   return await UserModel.findOne({
     _id: resellerId,
     role: { $in: ["ADMIN", "RESELLER"] },
