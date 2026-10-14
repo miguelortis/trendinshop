@@ -507,6 +507,12 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                         setOrderError("");
                       }}
                       onBlur={() => void handleDocumentBlur()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleDocumentBlur();
+                        }
+                      }}
                       maxLength={40}
                       autoComplete="off"
                       required
