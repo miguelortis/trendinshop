@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
@@ -8,9 +8,18 @@ import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { UserModel } from "@/models/User";
+import { CustomerModel } from "@/models/Customer";
+import { CustomerIdentityModel } from "@/models/CustomerIdentity";
 
 type Role = "ADMIN" | "RESELLER";
-type CustomerInput = { firstName: string; lastName: string; phone: string; email: string; address: string };
+type CustomerInput = {
+  documentId: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  address: string;
+};
 type OrderItemRecord = {
   productId: mongoose.Types.ObjectId | string;
   variantId: mongoose.Types.ObjectId | string;
@@ -47,6 +56,8 @@ type UserRecord = {
   phone?: string;
   role: Role;
   isActive: boolean;
+  storeName?: string;
+  storeWhatsApp?: string;
 };
 
 type PublicProductForOrder = {
@@ -54,7 +65,6 @@ type PublicProductForOrder = {
   title: string;
   sku: string;
 };
-
 type PublicVariantForOrder = {
   _id: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
@@ -62,6 +72,7 @@ type PublicVariantForOrder = {
   sku: string;
   stock: number;
 };
+type PublicOrderLineInput = { productId: string; variantId: string; quantity: number };
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -89,14 +100,56 @@ function orderNumber() {
 function customerName(customer?: CustomerRecord) {
   return [customer?.firstName, customer?.lastName].filter(Boolean).join(" ") || "Cliente";
 }
+function normalizeDocumentId(value: unknown) {
+  return text(value).toUpperCase().replace(/[.\s-]/g, "");
+}
+function normalizeCompare(value: unknown) {
+  return text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function phoneDigits(value: unknown) {
+  return text(value).replace(/\D/g, "");
+}
+function hashToken(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+function validSessionToken(hashes: unknown, token: string) {
+  return Boolean(token && Array.isArray(hashes) && hashes.some((value) => value === hashToken(token)));
+}
+function randomCustomerSessionToken() {
+  return randomBytes(32).toString("hex");
+}
+function normalizeRequestedItems(body: Record<string, unknown>): PublicOrderLineInput[] | null {
+  let source: unknown = body.items;
+  if (!Array.isArray(source)) {
+    const productId = text(body.productId);
+    const variantId = text(body.variantId);
+    source = [{ productId, variantId, quantity: Number(body.quantity) }];
+  }
+  if (!Array.isArray(source) || source.length < 1 || source.length > 30) return null;
+
+  const seen = new Set<string>();
+  const output: PublicOrderLineInput[] = [];
+  for (const value of source) {
+    if (!value || typeof value !== "object") return null;
+    const item = value as Record<string, unknown>;
+    const productId = text(item.productId);
+    const variantId = text(item.variantId);
+    const quantity = Number(item.quantity);
+    if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) ||
+      !Number.isInteger(quantity) || quantity < 1 || quantity > 100 || seen.has(variantId)) return null;
+    seen.add(variantId);
+    output.push({ productId, variantId, quantity });
+  }
+  return output;
+}
 
 function serializeOrder(order: PublicOrderRecord, seller?: UserRecord) {
   return {
     _id: String(order._id),
     orderNumber: order.orderNumber,
     resellerId: String(order.resellerId),
-    resellerName: seller ? [seller.firstName, seller.lastName].filter(Boolean).join(" ") : "",
-    resellerPhone: seller?.phone ?? "",
+    resellerName: seller ? (seller.storeName?.trim() || [seller.firstName, seller.lastName].filter(Boolean).join(" ")) : "",
+    resellerPhone: seller?.storeWhatsApp?.trim() || seller?.phone || "",
     resellerRole: order.resellerRole,
     customer: order.customer,
     customerName: customerName(order.customer),
@@ -124,104 +177,252 @@ function serializeOrder(order: PublicOrderRecord, seller?: UserRecord) {
 }
 
 export async function createPublicOrder(request: Request) {
+  let session: mongoose.ClientSession | null = null;
+  let createdOrder: unknown = null;
+  let customerSessionToken = "";
   try {
     const body = await request.json() as Record<string, unknown>;
     const resellerId = text(body.resellerId);
-    const productId = text(body.productId);
-    const variantId = text(body.variantId);
-    const quantity = Number(body.quantity);
-    const customer: CustomerInput = {
-      firstName: text(body.firstName),
-      lastName: text(body.lastName),
-      phone: text(body.phone),
-      email: text(body.email).toLowerCase(),
-      address: text(body.address),
+    const inputItems = normalizeRequestedItems(body);
+    const customerBody = body.customer && typeof body.customer === "object"
+      ? body.customer as Record<string, unknown>
+      : body;
+    const documentId = normalizeDocumentId(customerBody.documentId);
+    const submittedCustomer: CustomerInput = {
+      documentId,
+      firstName: text(customerBody.firstName),
+      lastName: text(customerBody.lastName),
+      phone: text(customerBody.phone),
+      email: text(customerBody.email).toLowerCase(),
+      address: text(customerBody.address),
     };
+    const submittedToken = text(body.customerSessionToken);
     const note = text(body.note).slice(0, 500);
 
-    if (!mongoose.isValidObjectId(resellerId) || !mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId)) {
-      return errorResponse("El catálogo o producto seleccionado no es válido.", 400, "INVALID_PUBLIC_ORDER_REFERENCE");
+    if (!mongoose.isValidObjectId(resellerId) || !inputItems) {
+      return errorResponse("El catálogo o los productos seleccionados no son válidos.", 400, "INVALID_PUBLIC_ORDER_REFERENCE");
     }
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
-      return errorResponse("La cantidad debe estar entre 1 y 100.", 400, "INVALID_QUANTITY");
+    if (!documentId || documentId.length > 40 || !submittedCustomer.firstName ||
+      !submittedCustomer.lastName || !submittedCustomer.phone || !submittedCustomer.email ||
+      submittedCustomer.firstName.length > 100 || submittedCustomer.lastName.length > 100 ||
+      submittedCustomer.phone.length > 40 || submittedCustomer.email.length > 200 ||
+      submittedCustomer.address.length > 300) {
+      return errorResponse("Completa la cédula, nombre, apellido, teléfono y correo electrónico.", 400, "CUSTOMER_FIELDS_REQUIRED");
     }
-    if (!customer.firstName || customer.firstName.length > 100 || customer.lastName.length > 100 ||
-        !customer.phone || customer.phone.length > 40 || customer.email.length > 200 || customer.address.length > 300) {
-      return errorResponse("Completa tu nombre y teléfono e ingresa datos dentro de los límites permitidos.");
-    }
-    if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedCustomer.email)) {
       return errorResponse("El correo electrónico no tiene un formato válido.");
+    }
+    if (submittedToken && !/^[a-f0-9]{64}$/i.test(submittedToken)) {
+      return errorResponse("La sesión de cliente guardada no es válida. Completa los datos del cliente nuevamente.", 400, "INVALID_CUSTOMER_SESSION");
     }
 
     await connectMongoDB();
-    const seller = await UserModel.findOne({
-      _id: resellerId,
-      role: { $in: ["ADMIN", "RESELLER"] },
-      isActive: true,
-    }).select("_id role").lean() as unknown as { _id: mongoose.Types.ObjectId; role: Role } | null;
+    session = await mongoose.startSession();
 
-    if (!seller) return errorResponse("Este catálogo ya no está disponible.", 404, "CATALOG_NOT_FOUND");
+    await session.withTransaction(async () => {
+      const seller = await UserModel.findOne({
+        _id: resellerId,
+        role: { $in: ["ADMIN", "RESELLER"] },
+        isActive: true,
+      }).select("_id role").session(session!).lean() as unknown as { _id: mongoose.Types.ObjectId; role: Role } | null;
 
-    const catalogItem = await ResellerCatalogItemModel.findOne({
-      resellerId: seller._id,
-      productId,
-      isActive: true,
-    }).select("sellingPrice").lean() as unknown as { sellingPrice: number } | null;
-    if (!catalogItem) return errorResponse("Este producto ya no está publicado en el catálogo.", 404, "PRODUCT_NOT_IN_CATALOG");
+      if (!seller) throw new PublicOrderError("Este catálogo ya no está disponible.", 404, "CATALOG_NOT_FOUND");
 
-    const productPromise = ProductModel.findOne({ _id: productId, isActive: true })
-      .select("_id title sku")
-      .lean() as unknown as Promise<PublicProductForOrder | null>;
-    const variantPromise = ProductVariantModel.findOne({ _id: variantId, productId, isActive: true })
-      .select("_id productId label sku stock")
-      .lean() as unknown as Promise<PublicVariantForOrder | null>;
-    const [product, variant] = await Promise.all([productPromise, variantPromise]);
+      const productIds = [...new Set(inputItems.map((item) => item.productId))];
+      const variantIds = inputItems.map((item) => item.variantId);
+      const [catalogItems, products, variants] = await Promise.all([
+        ResellerCatalogItemModel.find({
+          resellerId: seller._id,
+          productId: { $in: productIds },
+          isActive: true,
+        }).select("productId sellingPrice").session(session!).lean() as unknown as Promise<{ productId: mongoose.Types.ObjectId; sellingPrice: number }[]>,
+        ProductModel.find({ _id: { $in: productIds }, isActive: true })
+          .select("_id title sku").session(session!).lean() as unknown as Promise<PublicProductForOrder[]>,
+        ProductVariantModel.find({ _id: { $in: variantIds }, isActive: true })
+          .select("_id productId label sku stock").session(session!).lean() as unknown as Promise<PublicVariantForOrder[]>,
+      ]);
 
-    if (!product || !variant) return errorResponse("El producto o variante ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
-    if (variant.stock < quantity) {
-      return errorResponse("Solo quedan " + variant.stock + " unidades disponibles.", 409, "INSUFFICIENT_STOCK");
-    }
+      const productById = new Map(products.map((product) => [String(product._id), product]));
+      const variantById = new Map(variants.map((variant) => [String(variant._id), variant]));
+      const catalogByProductId = new Map(catalogItems.map((item) => [String(item.productId), item]));
+      const normalizedItems = inputItems.map((input) => {
+        const product = productById.get(input.productId);
+        const variant = variantById.get(input.variantId);
+        const catalog = catalogByProductId.get(input.productId);
+        if (!product || !variant || String(variant.productId) !== input.productId) {
+          throw new PublicOrderError("Uno de los productos o variantes ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
+        }
+        if (!catalog) {
+          throw new PublicOrderError("El producto " + product.title + " ya no está publicado en este catálogo.", 409, "PRODUCT_NOT_IN_CATALOG");
+        }
+        if (variant.stock < input.quantity) {
+          throw new PublicOrderError("Solo quedan " + variant.stock + " unidades de " + product.title + " (" + variant.label + ").", 409, "INSUFFICIENT_STOCK");
+        }
+        const unitPrice = fromCents(toCents(catalog.sellingPrice));
+        const lineTotal = fromCents(toCents(unitPrice) * input.quantity);
+        return {
+          productId: product._id,
+          variantId: variant._id,
+          productTitle: product.title,
+          productSku: product.sku,
+          variantLabel: variant.label,
+          variantSku: variant.sku,
+          quantity: input.quantity,
+          unitPrice,
+          lineTotal,
+          stockAtRequest: variant.stock,
+        };
+      });
+      const subtotalCents = normalizedItems.reduce((sum, item) => sum + toCents(item.lineTotal), 0);
+      const subtotal = fromCents(subtotalCents);
 
-    const unitPrice = fromCents(toCents(catalogItem.sellingPrice));
-    const subtotal = fromCents(toCents(unitPrice) * quantity);
-    const created = await PublicOrderModel.create({
-      orderNumber: orderNumber(),
-      resellerId: seller._id,
-      resellerRole: seller.role,
-      customer,
-      items: [{
-        productId: product._id,
-        variantId: variant._id,
-        productTitle: product.title,
-        productSku: product.sku,
-        variantLabel: variant.label,
-        variantSku: variant.sku,
-        quantity,
-        unitPrice,
-        lineTotal: subtotal,
-        stockAtRequest: variant.stock,
-      }],
-      subtotal,
-      note,
-      status: "PENDING",
-      isActive: true,
+      const identity = await CustomerIdentityModel.findOne({ documentId, isActive: true }).session(session!).exec();
+      let resolvedCustomer: CustomerInput;
+      if (!identity) {
+        // First purchase: save a reusable customer profile without a password/login account.
+        customerSessionToken = randomCustomerSessionToken();
+        const createdIdentities = await CustomerIdentityModel.create([{
+          ...submittedCustomer,
+          documentId,
+          sessionTokenHashes: [hashToken(customerSessionToken)],
+          isActive: true,
+        }], { session: session! });
+        const newIdentity = createdIdentities[0];
+        (newIdentity as unknown as { _id: mongoose.Types.ObjectId });
+        resolvedCustomer = submittedCustomer;
+        const customer = await CustomerModel.findOne({
+          ownerId: seller._id,
+          documentId,
+        }).session(session!).exec();
+        if (customer) {
+          customer.firstName = resolvedCustomer.firstName;
+          customer.lastName = resolvedCustomer.lastName;
+          customer.phone = resolvedCustomer.phone;
+          customer.email = resolvedCustomer.email;
+          customer.address = resolvedCustomer.address;
+          customer.isActive = true;
+          await customer.save({ session: session! });
+        } else {
+          await CustomerModel.create([{
+            ownerId: seller._id,
+            ...resolvedCustomer,
+            isActive: true,
+          }], { session: session! });
+        }
+
+        const created = await PublicOrderModel.create([{
+          orderNumber: orderNumber(),
+          resellerId: seller._id,
+          resellerRole: seller.role,
+          customer: resolvedCustomer,
+          customerProfileId: newIdentity._id,
+          items: normalizedItems,
+          subtotal,
+          note,
+          status: "PENDING",
+          isActive: true,
+        }], { session: session! });
+        createdOrder = created[0];
+      } else {
+        const authorizedByToken = validSessionToken(identity.sessionTokenHashes, submittedToken);
+        const matchesSavedData =
+          normalizeCompare(submittedCustomer.firstName) === normalizeCompare(identity.firstName) &&
+          normalizeCompare(submittedCustomer.lastName) === normalizeCompare(identity.lastName) &&
+          phoneDigits(submittedCustomer.phone) === phoneDigits(identity.phone) &&
+          submittedCustomer.email.toLowerCase() === text(identity.email).toLowerCase();
+
+        if (!authorizedByToken && !matchesSavedData) {
+          throw new PublicOrderError(
+            "Esta cédula ya tiene un perfil. Para proteger los datos personales, usa el dispositivo donde guardaste tus datos o introduce los datos registrados exactamente.",
+            409,
+            "CUSTOMER_VERIFICATION_REQUIRED",
+          );
+        }
+
+        if (authorizedByToken) {
+          customerSessionToken = submittedToken;
+          resolvedCustomer = {
+            documentId: identity.documentId,
+            firstName: identity.firstName,
+            lastName: identity.lastName,
+            phone: identity.phone,
+            email: identity.email,
+            address: submittedCustomer.address,
+          };
+        } else {
+          customerSessionToken = randomCustomerSessionToken();
+          identity.sessionTokenHashes = [
+            ...(identity.sessionTokenHashes ?? []),
+            hashToken(customerSessionToken),
+          ].slice(-5);
+          resolvedCustomer = submittedCustomer;
+        }
+        if (resolvedCustomer.address !== identity.address) identity.address = resolvedCustomer.address;
+        await identity.save({ session: session! });
+
+        const customer = await CustomerModel.findOne({
+          ownerId: seller._id,
+          documentId,
+        }).session(session!).exec();
+        if (customer) {
+          // Conserva nombre, cédula, correo y teléfono del perfil central; actualiza solo la dirección.
+          customer.address = resolvedCustomer.address;
+          customer.isActive = true;
+          await customer.save({ session: session! });
+        } else {
+          await CustomerModel.create([{
+            ownerId: seller._id,
+            ...resolvedCustomer,
+            isActive: true,
+          }], { session: session! });
+        }
+
+        const created = await PublicOrderModel.create([{
+          orderNumber: orderNumber(),
+          resellerId: seller._id,
+          resellerRole: seller.role,
+          customer: resolvedCustomer,
+          customerProfileId: identity._id,
+          items: normalizedItems,
+          subtotal,
+          note,
+          status: "PENDING",
+          isActive: true,
+        }], { session: session! });
+        createdOrder = created[0];
+      }
     });
 
+    if (!createdOrder) return errorResponse("No pudimos registrar el pedido.", 500, "ORDER_NOT_CREATED");
     const result = {
       ok: true,
-      order: serializeOrder(created.toObject() as unknown as PublicOrderRecord),
-      message: "Pedido enviado. El vendedor se pondrá en contacto contigo para confirmar la disponibilidad y entrega.",
+      order: serializeOrder((createdOrder as { toObject(): unknown }).toObject() as unknown as PublicOrderRecord),
+      customerSessionToken,
+      message: "Solicitud registrada. El vendedor confirmará existencias, precio y entrega antes de crear la venta.",
     };
     return NextResponse.json(result, {
       status: 201,
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
+    if (error instanceof PublicOrderError) return errorResponse(error.message, error.status, error.code);
     if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
-      return errorResponse("No pudimos asignar un número único al pedido. Inténtalo de nuevo.", 409, "ORDER_NUMBER_CONFLICT");
+      return errorResponse("Ya existe un registro con estos datos. Revisa la cédula e inténtalo de nuevo.", 409, "DUPLICATE_CUSTOMER_OR_ORDER");
     }
     console.error("[PUBLIC_ORDER_CREATE]", error);
     return errorResponse("No pudimos registrar el pedido. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
+  } finally {
+    if (session) await session.endSession();
+  }
+}
+
+class PublicOrderError extends Error {
+  status: number;
+  code: string;
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -236,7 +437,7 @@ export async function listPublicOrders(userId: string, userRole: string) {
     const orders = await PublicOrderModel.find(filter).sort({ createdAt: -1 }).lean() as unknown as PublicOrderRecord[];
     const sellerIds = [...new Set(orders.map((order) => String(order.resellerId)))];
     const sellers = sellerIds.length
-      ? await UserModel.find({ _id: { $in: sellerIds } }).select("_id firstName lastName phone role isActive").lean() as unknown as UserRecord[]
+      ? await UserModel.find({ _id: { $in: sellerIds } }).select("_id firstName lastName phone role isActive storeName storeWhatsApp").lean() as unknown as UserRecord[]
       : [];
     const sellerById = new Map<string, UserRecord>();
     for (const seller of sellers) sellerById.set(String(seller._id), seller);
