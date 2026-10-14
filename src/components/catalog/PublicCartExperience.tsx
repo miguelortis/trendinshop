@@ -88,6 +88,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   const [sharedUrl, setSharedUrl] = useState("");
   const [customer, setCustomer] = useState<CustomerForm>(blankCustomer);
   const [customerToken, setCustomerToken] = useState("");
+  const [storedCustomerSession, setStoredCustomerSession] = useState<StoredCustomerSession | null>(null);
   const [trustedCustomer, setTrustedCustomer] = useState(false);
   const [rememberData, setRememberData] = useState(!shareToken);
   const [lookupMessage, setLookupMessage] = useState("");
@@ -181,19 +182,19 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   }, []);
 
   useEffect(() => {
+    setRememberData(!shareToken);
     try {
       const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw) as StoredCustomerSession;
       if (!saved.documentId || !saved.token) return;
-      setCustomer((current) => ({ ...current, documentId: saved.documentId }));
-      setCustomerToken(saved.token);
-      setRememberData(!shareToken);
-      void lookupCustomer(saved.documentId, saved.token);
+      // Se conserva el token en memoria, pero no se muestra el perfil hasta que el comprador
+      // escriba su cédula y la coincidencia se compruebe expresamente.
+      setStoredCustomerSession(saved);
     } catch {
       // Si el almacenamiento del navegador no se puede leer, el cliente puede completar el formulario.
     }
-  }, [lookupCustomer, shareToken]);
+  }, [shareToken]);
 
   function changeQuantity(variantId: string, nextQuantity: number) {
     const existing = items.find((item) => item.variantId === variantId);
@@ -271,16 +272,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
 
   async function handleDocumentBlur() {
     const value = normalizeDocumentId(customer.documentId);
-    if (!value) return;
-    try {
-      const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as StoredCustomerSession;
-      if (normalizeDocumentId(saved.documentId) !== value || !saved.token) return;
-      await lookupCustomer(value, saved.token);
-    } catch {
-      // La búsqueda automática es opcional; el usuario puede seguir rellenando el formulario.
-    }
+    const saved = storedCustomerSession;
+    if (!value || !saved?.token || normalizeDocumentId(saved.documentId) !== value) return;
+    await lookupCustomer(value, saved.token);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -317,10 +311,12 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       writePublicCart(resellerId, []);
       if (rememberData && response.data.customerSessionToken) {
         try {
-          localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify({
+          const nextSession = {
             documentId: normalizeDocumentId(customer.documentId),
             token: response.data.customerSessionToken,
-          } satisfies StoredCustomerSession));
+          } satisfies StoredCustomerSession;
+          localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(nextSession));
+          setStoredCustomerSession(nextSession);
         } catch {
           // El pedido ya se registró; si no se puede guardar localmente, la próxima vez se completarán los datos manualmente.
         }
@@ -329,6 +325,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
           if (raw && normalizeDocumentId((JSON.parse(raw) as StoredCustomerSession).documentId) === normalizeDocumentId(customer.documentId)) {
             localStorage.removeItem(CUSTOMER_SESSION_KEY);
+            setStoredCustomerSession(null);
           }
         } catch {
           // No bloquea el pedido.
