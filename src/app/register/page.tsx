@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Eye, EyeOff, LockKeyhole, Mail, Phone, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
 import { api } from "@/lib/api/client";
 
@@ -12,6 +12,9 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [documentId, setDocumentId] = useState("");
+  const [customerSessionToken, setCustomerSessionToken] = useState("");
+  const [profileRecovered, setProfileRecovered] = useState(false);
+  const [profileNotice, setProfileNotice] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -23,6 +26,50 @@ export default function RegisterPage() {
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function normalizeDocument(value: string) {
+    return value.trim().toUpperCase().replace(/[.\\s-]/g, "");
+  }
+
+  async function recoverCustomerProfile(value = documentId) {
+    const normalized = normalizeDocument(value);
+    if (!normalized) return;
+    setProfileNotice("");
+    try {
+      const raw = localStorage.getItem("trendinshop:customer-session");
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { documentId?: string; token?: string };
+      if (!saved.documentId || !saved.token || normalizeDocument(saved.documentId) !== normalized) return;
+      const response = await api.get<{ ok: true; customer: { documentId: string; firstName: string; lastName: string; phone: string; email: string; address: string } }>("/public-customers/lookup", {
+        params: { documentId: normalized, token: saved.token },
+      });
+      setDocumentId(response.data.customer.documentId);
+      setFirstName(response.data.customer.firstName);
+      setLastName(response.data.customer.lastName);
+      setPhone(response.data.customer.phone);
+      setEmail(response.data.customer.email);
+      setCustomerSessionToken(saved.token);
+      setProfileRecovered(true);
+      setProfileNotice("Recuperamos tus datos del perfil de cliente. Completa los datos que faltan para abrir tu cuenta de revendedor.");
+    } catch {
+      setProfileRecovered(false);
+      setCustomerSessionToken("");
+      setProfileNotice("");
+    }
+  }
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("trendinshop:customer-session");
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { documentId?: string; token?: string };
+      if (!saved.documentId || !saved.token) return;
+      setDocumentId(saved.documentId);
+      void recoverCustomerProfile(saved.documentId);
+    } catch {
+      // El registro también se puede completar manualmente.
+    }
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,6 +90,7 @@ export default function RegisterPage() {
     try {
       await api.post("/auth/register", {
         documentId,
+        customerSessionToken,
         firstName,
         lastName,
         phone,
@@ -97,13 +145,14 @@ export default function RegisterPage() {
 
             <form className="register-form" onSubmit={handleSubmit}>
               <div className="form-section-label">Información personal</div>
+              {profileNotice ? <div className="settings-success" role="status">{profileNotice}</div> : null}
               <div className="form-grid two">
-                <label className="field"><span>Cédula</span><input placeholder="12345678" inputMode="numeric" value={documentId} onChange={(event) => setDocumentId(event.target.value)} required disabled={loading} /></label>
-                <label className="field"><span>Teléfono</span><div className="input-with-icon"><Phone size={16} /><input placeholder="+58 414 555 5555" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required disabled={loading} /></div></label>
+                <label className="field"><span>Cédula</span><input placeholder="12345678" inputMode="numeric" value={documentId} onBlur={() => void recoverCustomerProfile()} onChange={(event) => setDocumentId(event.target.value)} required disabled={loading || profileRecovered} /></label>
+                <label className="field"><span>Teléfono</span><div className="input-with-icon"><Phone size={16} /><input placeholder="+58 414 555 5555" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required disabled={loading || profileRecovered} /></div></label>
               </div>
               <div className="form-grid two">
-                <label className="field"><span>Nombre</span><div className="input-with-icon"><UserRound size={16} /><input placeholder="Pedro" autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} required disabled={loading} /></div></label>
-                <label className="field"><span>Apellido</span><input placeholder="Pérez" autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} required disabled={loading} /></label>
+                <label className="field"><span>Nombre</span><div className="input-with-icon"><UserRound size={16} /><input placeholder="Pedro" autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} required disabled={loading || profileRecovered} /></div></label>
+                <label className="field"><span>Apellido</span><input placeholder="Pérez" autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} required disabled={loading || profileRecovered} /></label>
               </div>
               <div className="form-grid two">
                 <label className="field"><span>Género</span><select value={gender} onChange={(event) => setGender(event.target.value)} required disabled={loading}><option value="" disabled>Selecciona una opción</option><option value="female">Femenino</option><option value="male">Masculino</option><option value="unspecified">Prefiero no decirlo</option></select></label>
@@ -111,7 +160,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="form-section-label">Acceso a tu cuenta</div>
-              <label className="field"><span>Correo electrónico</span><div className="input-with-icon"><Mail size={16} /><input type="email" placeholder="nombre@correo.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={loading} /></div></label>
+              <label className="field"><span>Correo electrónico</span><div className="input-with-icon"><Mail size={16} /><input type="email" placeholder="nombre@correo.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={loading || profileRecovered} /></div></label>
 
               <div className="form-grid two">
                 <label className="field"><span>Contraseña</span><div className="password-input"><LockKeyhole size={16} /><input type={showPassword ? "text" : "password"} placeholder="Mínimo 8 caracteres" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={loading} /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
