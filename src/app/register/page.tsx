@@ -40,8 +40,9 @@ export default function RegisterPage() {
       if (!raw) return;
       const saved = JSON.parse(raw) as { documentId?: string; token?: string };
       if (!saved.documentId || !saved.token || normalizeDocument(saved.documentId) !== normalized) return;
-      const response = await api.get<{ ok: true; customer: { documentId: string; firstName: string; lastName: string; phone: string; email: string; address: string } }>("/public-customers/lookup", {
-        params: { documentId: normalized, token: saved.token },
+      const response = await api.post<{ ok: true; customer: { documentId: string; firstName: string; lastName: string; phone: string; email: string; address: string } }>("/public-customers/lookup", {
+        documentId: normalized,
+        token: saved.token,
       });
       setDocumentId(response.data.customer.documentId);
       setFirstName(response.data.customer.firstName);
