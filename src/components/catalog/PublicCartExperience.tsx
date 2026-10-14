@@ -586,9 +586,6 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   <textarea value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} maxLength={500} rows={2} disabled={busy} placeholder="Indicaciones para el vendedor..." />
                 </label>
 
-                </>
-                ) : null}
-
                 <label className="public-cart-remember-row">
                   <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
                   <span>Acepto que se guarden mis datos para gestionar este pedido y facilitar futuras compras. Este perfil no crea una cuenta de acceso ni tiene contraseña.</span>
@@ -617,6 +614,8 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   {busy ? "Enviando solicitud..." : "Enviar solicitud de pedido"}
                 </button>
                 <p className="public-order-disclaimer">Esto no es un cobro ni una reserva de inventario. El vendedor confirmará disponibilidad, importe final y entrega.</p>
+                  </>
+                ) : null}
               </form>
             </aside>
           </div>
