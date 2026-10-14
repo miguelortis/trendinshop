@@ -209,6 +209,8 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     setItems(next);
     writePublicCart(resellerId, draft(next));
     setCartMessage("");
+    setShareMessage("");
+    setSharedUrl("");
   }
 
   function removeItem(variantId: string) {
@@ -216,6 +218,8 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     setItems(next);
     writePublicCart(resellerId, draft(next));
     setCartMessage("");
+    setShareMessage("");
+    setSharedUrl("");
   }
 
   async function updatePrices() {
