@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import mongoose from "mongoose";
 import { notFound } from "next/navigation";
-import { PublicOrderForm } from "@/components/catalog/PublicOrderForm";
 import { ShareProductActions } from "@/components/catalog/ShareProductActions";
+import { PublicCartControls } from "@/components/catalog/PublicCartControls";
+import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CategoryModel } from "@/models/Category";
 import { ProductModel } from "@/models/Product";
@@ -229,17 +230,12 @@ export default async function PublicProductPage({ params }: PageProps) {
   return (
     <main className="public-catalog-shell public-product-shell">
       <div className="public-catalog-container">
-        <header className="public-catalog-nav">
-          <Link href={"/tienda/" + data.sellerSlug} className="public-catalog-brand public-catalog-store-brand" aria-label={sellerName}>
-            {data.sellerLogoUrl ? (
-              <img className="public-catalog-store-logo" src={data.sellerLogoUrl} alt={"Logotipo de " + sellerName} />
-            ) : (
-              <span className="public-catalog-brand-mark">T</span>
-            )}
-            <span>{sellerName}</span>
-          </Link>
-          <Link href={"/tienda/" + data.sellerSlug} className="public-catalog-nav-link">Ver todo el catálogo</Link>
-        </header>
+        <PublicStorefrontHeader
+          resellerId={data.sellerId}
+          storeSlug={data.sellerSlug}
+          storeName={sellerName}
+          logoUrl={data.sellerLogoUrl}
+        />
 
         <nav className="public-product-breadcrumb" aria-label="Ruta de navegación">
           <Link href={"/tienda/" + resellerId}>{sellerName}</Link>
@@ -271,10 +267,9 @@ export default async function PublicProductPage({ params }: PageProps) {
 
             {product.description ? <p className="public-product-description">{product.description}</p> : null}
 
-            <PublicOrderForm
+            <PublicCartControls
               resellerId={data.sellerId}
-              sellerName={sellerName}
-              sellerPhone={data.sellerPhone}
+              storeSlug={data.sellerSlug}
               productId={product.id}
               productTitle={product.title}
               sellingPrice={product.sellingPrice}
