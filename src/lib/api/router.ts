@@ -19,6 +19,8 @@ import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
+import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
+import { lookupPublicCustomer } from "@/lib/api/public-customers";
 import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
@@ -58,9 +60,17 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "POST" && action === "logout") return logoutUser();
   }
 
-  // El catálogo público admite solicitudes de pedido sin crear una cuenta de cliente.
+  // Los catálogos públicos no requieren sesión para crear un pedido, validar un carrito o compartirlo.
   if (resource === "public-orders" && method === "POST" && !action) {
     return createPublicOrder(request);
+  }
+  if (resource === "public-carts") {
+    if (method === "POST" && action === "validate") return validatePublicCart(request);
+    if (method === "POST" && action === "share") return createPublicCartShare(request);
+    if (method === "GET" && action === "share") return getPublicCartShare(request);
+  }
+  if (resource === "public-customers" && method === "GET" && action === "lookup") {
+    return lookupPublicCustomer(request);
   }
 
   const user = await getAuthenticatedUser(request);
