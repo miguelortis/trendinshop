@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { PublicOrderForm } from "@/components/catalog/PublicOrderForm";
 import { ShareProductActions } from "@/components/catalog/ShareProductActions";
 import { connectMongoDB } from "@/lib/db/mongodb";
+import { CategoryModel } from "@/models/Category";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
@@ -38,18 +39,14 @@ type ProductImageRecord = {
   isPrimary?: boolean;
 };
 
-type PopulatedCategory = {
-  _id?: mongoose.Types.ObjectId;
-  name?: string;
-};
-
 type ProductRecord = {
   _id: mongoose.Types.ObjectId;
   title: string;
   description?: string;
-  categoryId?: PopulatedCategory | string | null;
+  categoryId?: mongoose.Types.ObjectId | string | null;
   images?: ProductImageRecord[];
 };
+type CategoryRecord = { name: string };
 
 type VariantRecord = {
   _id: mongoose.Types.ObjectId;
@@ -129,10 +126,13 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
 
   const product = await ProductModel.findOne({ _id: productId, isActive: true })
     .select("_id title description categoryId images")
-    .populate("categoryId", "name")
     .lean() as unknown as ProductRecord | null;
 
   if (!product) return null;
+
+  const categoryRecord = product.categoryId
+    ? await CategoryModel.findById(product.categoryId).select("name").lean() as unknown as CategoryRecord | null
+    : null;
 
   const variants = await ProductVariantModel.find({ productId: product._id, isActive: true })
     .select("_id label options stock")
@@ -143,11 +143,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     .map((image) => ({ ...image, url: safeImageUrl(image.url) }))
     .filter((image) => Boolean(image.url));
 
-  const populatedCategory = product.categoryId;
-  const category =
-    populatedCategory && typeof populatedCategory === "object" && "name" in populatedCategory
-      ? populatedCategory.name || "General"
-      : "General";
+  const category = categoryRecord?.name || "General";
 
   return {
     sellerId: String(seller._id),
