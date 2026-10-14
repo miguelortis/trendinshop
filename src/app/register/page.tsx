@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Eye, EyeOff, LockKeyhole, Mail, Phone, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
 import { api } from "@/lib/api/client";
 
@@ -57,19 +57,6 @@ export default function RegisterPage() {
       setProfileNotice("");
     }
   }
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("trendinshop:customer-session");
-      if (!raw) return;
-      const saved = JSON.parse(raw) as { documentId?: string; token?: string };
-      if (!saved.documentId || !saved.token) return;
-      setDocumentId(saved.documentId);
-      void recoverCustomerProfile(saved.documentId);
-    } catch {
-      // El registro también se puede completar manualmente.
-    }
-  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
