@@ -41,7 +41,9 @@ type CustomerForm = {
 };
 type CustomerLookupResponse = {
   ok: true;
-  customer: Omit<CustomerForm, "note">;
+  exists: boolean;
+  customer?: Pick<CustomerForm, "firstName" | "lastName">;
+  message?: string;
 };
 type OrderResponse = {
   ok: true;
@@ -89,7 +91,10 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   const [customer, setCustomer] = useState<CustomerForm>(blankCustomer);
   const [customerToken, setCustomerToken] = useState("");
   const [storedCustomerSession, setStoredCustomerSession] = useState<StoredCustomerSession | null>(null);
-  const [trustedCustomer, setTrustedCustomer] = useState(false);
+  const [knownCustomer, setKnownCustomer] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupState, setLookupState] = useState<"idle" | "checking" | "found" | "not-found" | "error">("idle");
+  const [lookedUpDocumentId, setLookedUpDocumentId] = useState("");
   const [rememberData, setRememberData] = useState(!shareToken);
   const [acceptCustomerData, setAcceptCustomerData] = useState(false);
   const [notificationsWhatsAppConsent, setNotificationsWhatsAppConsent] = useState(false);
@@ -103,7 +108,10 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     [items],
   );
   const hasUnavailable = items.some((item) => !item.available || item.stock < item.quantity);
-  const canSubmit = items.length > 0 && !hasUnavailable && !loadingCart && !busy && !success;
+  const lookupComplete = (lookupState === "found" || lookupState === "not-found") &&
+    lookedUpDocumentId === normalizeDocumentId(customer.documentId);
+  const canSubmit = items.length > 0 && !hasUnavailable && !loadingCart && !busy &&
+    !lookupLoading && lookupComplete && !success;
 
   const refreshCart = useCallback(async (cartItems: PublicCartDraftItem[]) => {
     if (!cartItems.length) {
@@ -155,35 +163,47 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     return () => { active = false; };
   }, [resellerId, shareToken, refreshCart]);
 
-  const lookupCustomer = useCallback(async (documentId: string, token: string) => {
-    if (!documentId || !token) return false;
+  const lookupCustomer = useCallback(async (documentId: string) => {
+    if (!documentId) return;
+    setLookupLoading(true);
+    setLookupState("checking");
     setLookupMessage("");
     try {
-      const response = await api.post<CustomerLookupResponse>("/public-customers/lookup", {
-        documentId,
-        token,
-      });
-      const saved = response.data.customer;
-      setCustomer((current) => ({
-        ...current,
-        documentId: saved.documentId,
-        firstName: saved.firstName,
-        lastName: saved.lastName,
-        phone: saved.phone,
-        email: saved.email,
-        address: saved.address,
-      }));
-      setCustomerToken(token);
-      setTrustedCustomer(true);
-      setLookupMessage("Reconocimos tus datos guardados. Los datos personales principales están protegidos.");
-      return true;
+      const response = await api.post<CustomerLookupResponse>("/public-customers/lookup", { documentId });
+      setLookedUpDocumentId(documentId);
+
+      if (response.data.exists && response.data.customer) {
+        setCustomer({
+          ...blankCustomer,
+          documentId,
+          firstName: response.data.customer.firstName,
+          lastName: response.data.customer.lastName,
+        });
+        setKnownCustomer(true);
+        const savedToken = storedCustomerSession &&
+          normalizeDocumentId(storedCustomerSession.documentId) === documentId
+          ? storedCustomerSession.token
+          : "";
+        setCustomerToken(savedToken);
+        setLookupState("found");
+        setLookupMessage(response.data.message ?? "Encontramos un registro. Verifica que el nombre y apellido sean correctos.");
+      } else {
+        setCustomer({ ...blankCustomer, documentId });
+        setKnownCustomer(false);
+        setCustomerToken("");
+        setLookupState("not-found");
+        setLookupMessage(response.data.message ?? "No encontramos un registro con esa cédula. Completa tus datos para continuar.");
+      }
     } catch {
-      setTrustedCustomer(false);
+      setKnownCustomer(false);
       setCustomerToken("");
-      setLookupMessage("No encontramos datos guardados en este dispositivo. Completa tus datos para continuar.");
-      return false;
+      setLookupState("error");
+      setLookedUpDocumentId(documentId);
+      setLookupMessage("No pudimos validar la cédula. Revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setLookupLoading(false);
     }
-  }, []);
+  }, [storedCustomerSession]);
 
   useEffect(() => {
     setRememberData(false);
@@ -280,9 +300,15 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
 
   async function handleDocumentBlur() {
     const value = normalizeDocumentId(customer.documentId);
-    const saved = storedCustomerSession;
-    if (!value || !saved?.token || normalizeDocumentId(saved.documentId) !== value) return;
-    await lookupCustomer(value, saved.token);
+    if (!value) {
+      setLookupState("idle");
+      setLookedUpDocumentId("");
+      setLookupMessage("");
+      setKnownCustomer(false);
+      return;
+    }
+    if (lookedUpDocumentId === value && lookupState !== "idle" && lookupState !== "error") return;
+    await lookupCustomer(value);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -290,6 +316,15 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     setOrderError("");
     if (!items.length) {
       setOrderError("Agrega al menos un producto al carrito.");
+      return;
+    }
+    if (!lookupComplete) {
+      setOrderError("Primero introduce la cédula y espera a que termine la búsqueda.");
+      return;
+    }
+    if (!knownCustomer && (!customer.firstName.trim() || !customer.lastName.trim() ||
+      !customer.phone.trim() || !customer.email.trim())) {
+      setOrderError("Completa nombre, apellido, teléfono y correo electrónico.");
       return;
     }
     if (!acceptCustomerData) {
@@ -308,13 +343,15 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
         items: draft(items),
         customer: {
           documentId: normalizeDocumentId(customer.documentId),
-          firstName: customer.firstName,
-          lastName: customer.lastName,
-          phone: customer.phone,
-          email: customer.email,
           address: customer.address,
+          ...(knownCustomer ? {} : {
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            phone: customer.phone,
+            email: customer.email,
+          }),
         },
-        customerSessionToken: trustedCustomer ? customerToken : undefined,
+        customerSessionToken: customerToken || undefined,
         rememberCustomer: rememberData,
         customerDataConsent: acceptCustomerData,
         notificationsWhatsAppConsent,
@@ -450,56 +487,96 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
               <form className="public-cart-customer-form" onSubmit={handleSubmit}>
                 <label className="public-order-field">
                   <span>Cédula *</span>
-                  <input
-                    value={customer.documentId}
-                    onChange={(event) => {
-                      updateCustomer("documentId", event.target.value);
-                      if (trustedCustomer) { setTrustedCustomer(false); setCustomerToken(""); }
-                    }}
-                    onBlur={() => void handleDocumentBlur()}
-                    maxLength={40}
-                    autoComplete="off"
-                    required
-                    disabled={trustedCustomer || busy}
-                    placeholder="Número de documento"
-                  />
-                </label>
-                <div className="public-cart-lookup-row">
-                  <button type="button" className="public-cart-secondary-button" onClick={() => void handleDocumentBlur()} disabled={busy || !customer.documentId.trim()}>
-                    Recuperar mis datos guardados
-                  </button>
-                  {trustedCustomer ? (
-                    <>
-                      <span><CheckCircle2 size={13} /> Datos reconocidos</span>
-                      <button type="button" className="public-cart-link-button" onClick={() => {
-                        setTrustedCustomer(false);
+                  <div style={{ position: "relative" }}>
+                    <input
+                      value={customer.documentId}
+                      onChange={(event) => {
+                        const documentId = event.target.value;
+                        setCustomer({ ...blankCustomer, documentId });
+                        setKnownCustomer(false);
                         setCustomerToken("");
-                        setCustomer(blankCustomer);
+                        setLookupState("idle");
+                        setLookedUpDocumentId("");
                         setLookupMessage("");
-                      }}>Usar otra cédula</button>
-                    </>
-                  ) : null}
-                </div>
-                {lookupMessage ? <p className={trustedCustomer ? "public-cart-lookup-note success" : "public-cart-lookup-note"} role="status">{lookupMessage}</p> : null}
+                        setAcceptCustomerData(false);
+                        setNotificationsWhatsAppConsent(false);
+                        setNotificationsEmailConsent(false);
+                        setRememberData(false);
+                        setOrderError("");
+                      }}
+                      onBlur={() => void handleDocumentBlur()}
+                      maxLength={40}
+                      autoComplete="off"
+                      required
+                      disabled={busy || lookupLoading}
+                      placeholder="Introduce tu número de cédula"
+                      style={lookupLoading ? { paddingRight: 44 } : undefined}
+                    />
+                    {lookupLoading ? (
+                      <LoaderCircle
+                        size={17}
+                        className="public-order-spinner"
+                        aria-label="Buscando coincidencias"
+                        style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+                      />
+                    ) : null}
+                  </div>
+                </label>
 
-                <div className="public-order-form-grid">
-                  <label className="public-order-field">
-                    <span>Nombre *</span>
-                    <input value={customer.firstName} onChange={(event) => updateCustomer("firstName", event.target.value)} maxLength={100} autoComplete="given-name" required disabled={trustedCustomer || busy} />
-                  </label>
-                  <label className="public-order-field">
-                    <span>Apellido *</span>
-                    <input value={customer.lastName} onChange={(event) => updateCustomer("lastName", event.target.value)} maxLength={100} autoComplete="family-name" required disabled={trustedCustomer || busy} />
-                  </label>
-                </div>
-                <label className="public-order-field">
-                  <span>Teléfono / WhatsApp *</span>
-                  <input value={customer.phone} onChange={(event) => updateCustomer("phone", event.target.value)} maxLength={40} type="tel" autoComplete="tel" required disabled={trustedCustomer || busy} />
-                </label>
-                <label className="public-order-field">
-                  <span>Correo electrónico *</span>
-                  <input value={customer.email} onChange={(event) => updateCustomer("email", event.target.value)} maxLength={200} type="email" autoComplete="email" required disabled={trustedCustomer || busy} />
-                </label>
+                {lookupMessage ? (
+                  <p className={"public-cart-lookup-note" + (lookupState === "found" ? " success" : "")} role="status">
+                    {lookupMessage}
+                  </p>
+                ) : null}
+                {lookupState === "error" ? (
+                  <button type="button" className="public-cart-link-button" onClick={() => void handleDocumentBlur()} disabled={busy || lookupLoading}>
+                    Volver a buscar la cédula
+                  </button>
+                ) : null}
+
+                {lookupState === "found" ? (
+                  <div className="public-cart-identity-confirmation">
+                    <p>Encontramos estos datos. Verifica que la cédula corresponda a tu identidad:</p>
+                    <div className="public-order-form-grid">
+                      <label className="public-order-field">
+                        <span>Nombre</span>
+                        <input value={customer.firstName} readOnly disabled={busy || lookupLoading} />
+                      </label>
+                      <label className="public-order-field">
+                        <span>Apellido</span>
+                        <input value={customer.lastName} readOnly disabled={busy || lookupLoading} />
+                      </label>
+                    </div>
+                    <p>Por seguridad, no mostramos el teléfono, el correo ni otros datos personales guardados.</p>
+                  </div>
+                ) : null}
+
+                {lookupState === "not-found" ? (
+                  <>
+                    <div className="public-order-form-grid">
+                      <label className="public-order-field">
+                        <span>Nombre *</span>
+                        <input required maxLength={100} autoComplete="given-name" value={customer.firstName} onChange={(event) => updateCustomer("firstName", event.target.value)} disabled={busy || lookupLoading} placeholder="Tu nombre" />
+                      </label>
+                      <label className="public-order-field">
+                        <span>Apellido *</span>
+                        <input required maxLength={100} autoComplete="family-name" value={customer.lastName} onChange={(event) => updateCustomer("lastName", event.target.value)} disabled={busy || lookupLoading} placeholder="Tu apellido" />
+                      </label>
+                    </div>
+
+                    <label className="public-order-field">
+                      <span>Teléfono / WhatsApp *</span>
+                      <input required maxLength={40} type="tel" autoComplete="tel" value={customer.phone} onChange={(event) => updateCustomer("phone", event.target.value)} disabled={busy || lookupLoading} placeholder="Número de contacto" />
+                    </label>
+                    <label className="public-order-field">
+                      <span>Correo electrónico *</span>
+                      <input required maxLength={200} type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer("email", event.target.value)} disabled={busy || lookupLoading} placeholder="tu@correo.com" />
+                    </label>
+                  </>
+                ) : null}
+
+                {lookupComplete ? (
+                  <>
                 <label className="public-order-field">
                   <span>Dirección de entrega (opcional)</span>
                   <input value={customer.address} onChange={(event) => updateCustomer("address", event.target.value)} maxLength={300} autoComplete="street-address" disabled={busy} placeholder="Dirección o lugar de entrega" />
@@ -508,6 +585,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   <span>Nota (opcional)</span>
                   <textarea value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} maxLength={500} rows={2} disabled={busy} placeholder="Indicaciones para el vendedor..." />
                 </label>
+
+                </>
+                ) : null}
 
                 <label className="public-cart-remember-row">
                   <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
@@ -523,7 +603,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                 </label>
                 <label className="public-cart-remember-row">
                   <input type="checkbox" checked={rememberData} onChange={(event) => setRememberData(event.target.checked)} disabled={busy} />
-                  <span>Recordar mis datos en este dispositivo para futuras compras. No lo marques en un equipo compartido.</span>
+                  <span>Guardar una clave segura de este perfil en este dispositivo para facilitar un futuro registro de cuenta. No lo marques en un equipo compartido.</span>
                 </label>
 
                 <div className="public-cart-checkout-totals">
