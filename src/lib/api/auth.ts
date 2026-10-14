@@ -3,6 +3,8 @@ import { connectMongoDB } from "@/lib/db/mongodb";
 import { assertAuthConfiguration, createSessionToken, SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { UserModel } from "@/models/User";
+import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { hasCustomerSessionToken, normalizeCustomerDocumentId } from "@/lib/customer-session";
 
 const COOKIE_BASE = {
   httpOnly: true,
@@ -52,13 +54,16 @@ function email(value: unknown) {
 }
 
 export async function registerUser(request: Request) {
+  let createdUserId = "";
+  let convertedCustomerId = "";
   try {
     const body = (await request.json()) as Record<string, unknown>;
-    const documentId = text(body.documentId);
-    const firstName = text(body.firstName);
-    const lastName = text(body.lastName);
-    const userEmail = email(body.email);
-    const phone = text(body.phone);
+    let documentId = normalizeCustomerDocumentId(body.documentId);
+    let firstName = text(body.firstName);
+    let lastName = text(body.lastName);
+    let userEmail = email(body.email);
+    let phone = text(body.phone);
+    const customerSessionToken = text(body.customerSessionToken);
     const password = typeof body.password === "string" ? body.password : "";
     const confirmPassword = typeof body.confirmPassword === "string" ? body.confirmPassword : "";
     const gender = text(body.gender);
@@ -67,40 +72,53 @@ export async function registerUser(request: Request) {
     if (!documentId || !firstName || !lastName || !userEmail || !phone || !password || !confirmPassword || !gender || !birthDate) {
       return errorResponse("Completa todos los campos obligatorios.");
     }
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
       return errorResponse("Introduce un correo electrónico válido.");
     }
-
-    if (password.length < 8) {
-      return errorResponse("La contraseña debe tener al menos 8 caracteres.");
-    }
-
-    if (password !== confirmPassword) {
-      return errorResponse("Las contraseñas no coinciden.");
-    }
+    if (password.length < 8) return errorResponse("La contraseña debe tener al menos 8 caracteres.");
+    if (password !== confirmPassword) return errorResponse("Las contraseñas no coinciden.");
 
     const parsedBirthDate = new Date(birthDate);
-    if (Number.isNaN(parsedBirthDate.getTime())) {
-      return errorResponse("La fecha de nacimiento no es válida.");
-    }
-
-    if (parsedBirthDate > new Date()) {
-      return errorResponse("La fecha de nacimiento no puede estar en el futuro.");
-    }
-
-    if (!["female", "male", "unspecified"].includes(gender)) {
-      return errorResponse("Selecciona un género válido.");
-    }
+    if (Number.isNaN(parsedBirthDate.getTime())) return errorResponse("La fecha de nacimiento no es válida.");
+    if (parsedBirthDate > new Date()) return errorResponse("La fecha de nacimiento no puede estar en el futuro.");
+    if (!["female", "male", "unspecified"].includes(gender)) return errorResponse("Selecciona un género válido.");
 
     assertAuthConfiguration();
     await connectMongoDB();
+
+    const customerIdentity = await CustomerIdentityModel.findOne({
+      documentId,
+      isActive: true,
+    }).exec();
+
+    if (customerIdentity) {
+      if (customerIdentity.convertedUserId) {
+        return errorResponse("Ya existe una cuenta asociada a esta cédula. Inicia sesión o recupera tu contraseña.", 409, "DOCUMENT_IN_USE");
+      }
+      if (!hasCustomerSessionToken(customerIdentity.sessionTokenHashes, customerSessionToken)) {
+        return errorResponse(
+          "Encontramos un perfil de cliente para esa cédula, pero no se ha podido verificar que sea tuyo en este dispositivo. Abre el enlace en el dispositivo donde guardaste tus datos o contacta al vendedor.",
+          403,
+          "CUSTOMER_PROFILE_VERIFICATION_REQUIRED",
+        );
+      }
+
+      // El perfil guardado es la fuente para los datos personales principales.
+      // No se permite cambiarlos en el formulario de alta.
+      firstName = customerIdentity.firstName;
+      lastName = customerIdentity.lastName;
+      phone = customerIdentity.phone;
+      userEmail = customerIdentity.email;
+      convertedCustomerId = String(customerIdentity._id);
+    } else if (customerSessionToken) {
+      // Un token no puede reutilizarse con otra cédula ni crear una identidad diferente.
+      return errorResponse("Los datos guardados no coinciden con esa cédula.", 403, "CUSTOMER_PROFILE_VERIFICATION_REQUIRED");
+    }
 
     const [emailExists, documentExists] = await Promise.all([
       UserModel.exists({ email: userEmail }),
       UserModel.exists({ documentId }),
     ]);
-
     if (emailExists) return errorResponse("Ya existe una cuenta con ese correo.", 409, "EMAIL_IN_USE");
     if (documentExists) return errorResponse("Ya existe una cuenta con esa cédula.", 409, "DOCUMENT_IN_USE");
 
@@ -117,29 +135,36 @@ export async function registerUser(request: Request) {
       role: "RESELLER",
       isActive: true,
     });
+    createdUserId = user._id.toString();
 
-    try {
-      const token = await createSessionToken(
-        { id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" },
-        true,
-      );
-
-      const response = NextResponse.json(
-      { ok: true, user: publicUser(user), message: "Cuenta creada correctamente." },
-        { status: 201 },
-      );
-
-      response.cookies.set(SESSION_COOKIE_NAME, token, {
-        ...COOKIE_BASE,
-        maxAge: 60 * 60 * 24 * 30,
-      });
-
-      return response;
-    } catch (sessionError) {
-      await UserModel.deleteOne({ _id: user._id });
-      throw sessionError;
+    if (customerIdentity) {
+      customerIdentity.convertedUserId = user._id;
+      await customerIdentity.save();
     }
+
+    const token = await createSessionToken(
+      { id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" },
+      true,
+    );
+    const response = NextResponse.json(
+      { ok: true, user: publicUser(user), message: "Cuenta creada correctamente." },
+      { status: 201 },
+    );
+    response.cookies.set(SESSION_COOKIE_NAME, token, {
+      ...COOKIE_BASE,
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    return response;
   } catch (error) {
+    if (createdUserId) {
+      try { await UserModel.deleteOne({ _id: createdUserId }); } catch { /* Evitar dejar una cuenta parcial. */ }
+    }
+    if (convertedCustomerId) {
+      try { await CustomerIdentityModel.updateOne({ _id: convertedCustomerId, convertedUserId: createdUserId }, { $set: { convertedUserId: null } }); } catch { /* La recuperación no debe ocultar el error original. */ }
+    }
+    if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
+      return errorResponse("Ya existe una cuenta con esa cédula o correo.", 409, "DUPLICATE_ACCOUNT");
+    }
     console.error("[AUTH_REGISTER]", error);
     return errorResponse("No pudimos crear la cuenta. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
   }
