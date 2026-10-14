@@ -3,6 +3,7 @@ import Link from "next/link";
 import mongoose from "mongoose";
 import { notFound } from "next/navigation";
 import { connectMongoDB } from "@/lib/db/mongodb";
+import { CategoryModel } from "@/models/Category";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
@@ -37,18 +38,14 @@ type ProductImageRecord = {
   isPrimary?: boolean;
 };
 
-type PopulatedCategory = {
-  _id?: mongoose.Types.ObjectId;
-  name?: string;
-};
-
 type ProductRecord = {
   _id: mongoose.Types.ObjectId;
   title: string;
   description?: string;
-  categoryId?: PopulatedCategory | string | null;
+  categoryId?: mongoose.Types.ObjectId | string | null;
   images?: ProductImageRecord[];
 };
+type CategoryRecord = { _id: mongoose.Types.ObjectId; name: string };
 
 type VariantRecord = {
   _id: mongoose.Types.ObjectId;
@@ -139,12 +136,20 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
   const [products, variants] = await Promise.all([
     ProductModel.find({ _id: { $in: productIds }, isActive: true })
       .select("_id title description categoryId images")
-      .populate("categoryId", "name")
       .lean() as unknown as Promise<ProductRecord[]>,
     ProductVariantModel.find({ productId: { $in: productIds }, isActive: true })
       .select("_id productId label options stock")
       .lean() as unknown as Promise<VariantRecord[]>,
   ]);
+
+  // Consulta las categorías explícitamente: las rutas públicas pueden ejecutarse
+  // en una instancia serverless donde el modelo Category aún no esté registrado
+  // para usar populate().
+  const categoryIds = [...new Set(products.map((product) => product.categoryId ? String(product.categoryId) : "").filter(Boolean))];
+  const categories: CategoryRecord[] = categoryIds.length
+    ? await CategoryModel.find({ _id: { $in: categoryIds } }).select("_id name").lean() as unknown as CategoryRecord[]
+    : [];
+  const categoryById = new Map(categories.map((category) => [String(category._id), category.name]));
 
   const productById = new Map<string, ProductRecord>(
     products.map((product) => [String(product._id), product]),
@@ -168,11 +173,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       .map((image) => ({ ...image, url: safeImageUrl(image.url) }))
       .filter((image) => Boolean(image.url));
 
-    const populatedCategory = product.categoryId;
-    const category =
-      populatedCategory && typeof populatedCategory === "object" && "name" in populatedCategory
-        ? populatedCategory.name || "General"
-        : "General";
+    const category = categoryById.get(product.categoryId ? String(product.categoryId) : "") || "General";
 
     return [{
       id,
