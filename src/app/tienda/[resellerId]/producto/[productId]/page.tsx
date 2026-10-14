@@ -93,11 +93,12 @@ function variantLabel(variant: VariantRecord) {
 }
 
 async function getPublicProduct(resellerId: string, productId: string): Promise<PublicProductData | null> {
-  if (!resellerId.trim() || !mongoose.isValidObjectId(productId)) return null;
+  if (!resellerId.trim() || !/^[a-f0-9]{24}$/i.test(productId)) return null;
 
   await connectMongoDB();
 
-  const sellerIdentityFilter = mongoose.isValidObjectId(resellerId)
+  const isSellerObjectId = /^[a-f0-9]{24}$/i.test(resellerId);
+  const sellerIdentityFilter = isSellerObjectId
     ? { $or: [{ _id: resellerId }, { storeSlug: resellerId }] }
     : { storeSlug: resellerId };
   const seller = await UserModel.findOne({
