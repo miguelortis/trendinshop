@@ -1,59 +1,78 @@
 import { NextResponse } from "next/server";
 import { connectMongoDB } from "@/lib/db/mongodb";
-import { normalizeCustomerDocumentId, hasCustomerSessionToken } from "@/lib/customer-session";
+import { normalizeCustomerDocumentId } from "@/lib/customer-session";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { UserModel } from "@/models/User";
 
-function errorResponse(message: string, status = 404, code = "CUSTOMER_PROFILE_NOT_FOUND") {
+function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
   return NextResponse.json({ ok: false, error: code, message }, {
     status,
     headers: { "Cache-Control": "no-store, max-age=0" },
   });
 }
 
+/**
+ * Public lookup intentionally returns only a name and surname. Contact details,
+ * addresses, session hashes and account metadata stay on the server.
+ */
 export async function lookupPublicCustomer(request: Request) {
   try {
     const body = await request.json() as Record<string, unknown>;
     const documentId = normalizeCustomerDocumentId(body.documentId);
-    const token = typeof body.token === "string" ? body.token.trim() : "";
-    if (!documentId || documentId.length > 40 || !/^[a-f0-9]{64}$/i.test(token)) {
-      return errorResponse("No pudimos recuperar los datos guardados en este dispositivo.");
+    if (!documentId || documentId.length > 40) {
+      return errorResponse("Introduce una cédula válida.", 400, "INVALID_DOCUMENT_ID");
     }
 
     await connectMongoDB();
-    const customer = await CustomerIdentityModel.findOne({
+
+    // Prefer the active account's current names if the document belongs to a reseller.
+    const user = await UserModel.findOne({
       documentId,
       isActive: true,
-    }).select("documentId firstName lastName phone email address sessionTokenHashes convertedUserId")
-      .lean() as unknown as {
-        documentId: string;
-        firstName: string;
-        lastName: string;
-        phone: string;
-        email?: string;
-        address?: string;
-        sessionTokenHashes?: string[];
-        convertedUserId?: unknown;
-      } | null;
+    }).select("firstName lastName").lean() as unknown as {
+      firstName: string;
+      lastName: string;
+    } | null;
 
-    // Nunca se devuelve información personal basándose solamente en la cédula.
-    if (!customer || !hasCustomerSessionToken(customer.sessionTokenHashes, token)) {
-      return errorResponse("No pudimos recuperar los datos guardados en este dispositivo. Completa tus datos para continuar.");
+    if (user) {
+      return NextResponse.json({
+        ok: true,
+        exists: true,
+        customer: {
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+        message: "Encontramos un registro. Verifica que el nombre y apellido sean correctos.",
+      }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    }
+
+    const identity = await CustomerIdentityModel.findOne({
+      documentId,
+      isActive: true,
+    }).select("firstName lastName").lean() as unknown as {
+      firstName: string;
+      lastName: string;
+    } | null;
+
+    if (identity) {
+      return NextResponse.json({
+        ok: true,
+        exists: true,
+        customer: {
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+        },
+        message: "Encontramos un registro. Verifica que el nombre y apellido sean correctos.",
+      }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
     return NextResponse.json({
       ok: true,
-      customer: {
-        documentId: customer.documentId,
-        firstName: customer.firstName,
-        lastName: customer.lastName,
-        phone: customer.phone,
-        email: customer.email ?? "",
-        address: customer.address ?? "",
-      },
-      message: "Datos recuperados de forma segura.",
+      exists: false,
+      message: "No encontramos un registro con esa cédula. Completa tus datos para continuar.",
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("[PUBLIC_CUSTOMER_LOOKUP]", error);
-    return errorResponse("No pudimos consultar los datos guardados.", 500, "INTERNAL_ERROR");
+    return errorResponse("No pudimos consultar la cédula. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
   }
 }
