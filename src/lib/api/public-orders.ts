@@ -197,6 +197,7 @@ export async function createPublicOrder(request: Request) {
       address: text(customerBody.address),
     };
     const submittedToken = text(body.customerSessionToken);
+    const rememberCustomer = body.rememberCustomer === true;
     const note = text(body.note).slice(0, 500);
 
     if (!mongoose.isValidObjectId(resellerId) || !inputItems) {
@@ -280,11 +281,11 @@ export async function createPublicOrder(request: Request) {
       let resolvedCustomer: CustomerInput;
       if (!identity) {
         // First purchase: save a reusable customer profile without a password/login account.
-        customerSessionToken = randomCustomerSessionToken();
+        customerSessionToken = rememberCustomer ? randomCustomerSessionToken() : "";
         const createdIdentities = await CustomerIdentityModel.create([{
           ...submittedCustomer,
           documentId,
-          sessionTokenHashes: [hashToken(customerSessionToken)],
+          sessionTokenHashes: customerSessionToken ? [hashToken(customerSessionToken)] : [],
           isActive: true,
         }], { session: session! });
         const newIdentity = createdIdentities[0];
@@ -350,11 +351,13 @@ export async function createPublicOrder(request: Request) {
             address: submittedCustomer.address,
           };
         } else {
-          customerSessionToken = randomCustomerSessionToken();
-          identity.sessionTokenHashes = [
-            ...(identity.sessionTokenHashes ?? []),
-            hashToken(customerSessionToken),
-          ].slice(-5);
+          customerSessionToken = rememberCustomer ? randomCustomerSessionToken() : "";
+          if (customerSessionToken) {
+            identity.sessionTokenHashes = [
+              ...(identity.sessionTokenHashes ?? []),
+              hashToken(customerSessionToken),
+            ].slice(-5);
+          }
           resolvedCustomer = submittedCustomer;
         }
         if (resolvedCustomer.address !== identity.address) identity.address = resolvedCustomer.address;
@@ -397,7 +400,7 @@ export async function createPublicOrder(request: Request) {
     const result = {
       ok: true,
       order: serializeOrder((createdOrder as { toObject(): unknown }).toObject() as unknown as PublicOrderRecord),
-      customerSessionToken,
+      customerSessionToken: rememberCustomer ? customerSessionToken : "",
       message: "Solicitud registrada. El vendedor confirmará existencias, precio y entrega antes de crear la venta.",
     };
     return NextResponse.json(result, {
