@@ -156,8 +156,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     if (!documentId || !token) return false;
     setLookupMessage("");
     try {
-      const response = await api.get<CustomerLookupResponse>("/public-customers/lookup", {
-        params: { documentId, token },
+      const response = await api.post<CustomerLookupResponse>("/public-customers/lookup", {
+        documentId,
+        token,
       });
       const saved = response.data.customer;
       setCustomer((current) => ({
