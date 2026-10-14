@@ -357,7 +357,7 @@ export async function createPublicOrder(request: Request) {
           customerSessionToken = rememberCustomer ? submittedToken : "";
           if (!rememberCustomer) {
             const usedTokenHash = hashToken(submittedToken);
-            identity.sessionTokenHashes = (identity.sessionTokenHashes ?? []).filter((value) => value !== usedTokenHash);
+            identity.sessionTokenHashes = (identity.sessionTokenHashes ?? []).filter((value: string) => value !== usedTokenHash);
           }
           resolvedCustomer = {
             documentId: identity.documentId,
