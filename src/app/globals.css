@@ -3347,3 +3347,15 @@ button, input, select, textarea { font: inherit; }
   .public-cart-breadcrumb { align-items: flex-start; flex-direction: column; }
   .public-cart-result { padding: 20px; margin: 25px auto; }
 }
+
+
+
+.public-cart-share-link { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px; margin: 0 0 14px; padding: 12px; border: 1px solid #d9d0ff; border-radius: 11px; background: #fcfbff; }
+.public-cart-share-link > label { grid-column: 1 / -1; color: #6941c6; font-size: 10px; font-weight: 850; }
+.public-cart-share-link > input { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 8px; color: #344054; background: #fff; font-size: 10px; }
+.public-cart-share-link > button { white-space: nowrap; }
+@media (max-width: 580px) {
+  .public-cart-share-link { grid-template-columns: minmax(0,1fr); }
+  .public-cart-share-link > label { grid-column: auto; }
+  .public-cart-share-link > button { width: 100%; }
+}
