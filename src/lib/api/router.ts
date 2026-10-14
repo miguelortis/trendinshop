@@ -69,7 +69,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "POST" && action === "share") return createPublicCartShare(request);
     if (method === "GET" && action === "share") return getPublicCartShare(request);
   }
-  if (resource === "public-customers" && method === "GET" && action === "lookup") {
+  if (resource === "public-customers" && method === "POST" && action === "lookup") {
     return lookupPublicCustomer(request);
   }
 
