@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectMongoDB } from "@/lib/db/mongodb";
-import { hashCustomerSessionToken, normalizeCustomerDocumentId, hasCustomerSessionToken } from "@/lib/customer-session";
+import { normalizeCustomerDocumentId, hasCustomerSessionToken } from "@/lib/customer-session";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
 
 function errorResponse(message: string, status = 404, code = "CUSTOMER_PROFILE_NOT_FOUND") {
