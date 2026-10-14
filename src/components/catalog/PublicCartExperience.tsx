@@ -312,18 +312,14 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       return;
     }
 
-    // Wait until the user has stopped typing for two seconds.
-    if (lookedUpDocumentId === documentId &&
-      (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) {
-      return;
-    }
-
+    // Debounce only on the document field, so status changes during a request
+    // cannot accidentally schedule a second lookup.
     const timeout = window.setTimeout(() => {
       void lookupCustomer(documentId);
     }, 2000);
 
     return () => window.clearTimeout(timeout);
-  }, [customer.documentId, lookupCustomer, lookedUpDocumentId, lookupState]);
+  }, [customer.documentId, lookupCustomer]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -537,7 +533,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                 </label>
 
                 {lookupMessage ? (
-                  <p className={"public-cart-lookup-note" + (lookupState === "found" ? " success" : "")} role="status">
+                  <p className={"public-cart-lookup-note" + (lookupState === "found" ? " success" : "") + (lookupComplete ? " public-cart-reveal" : "")} role="status">
                     {lookupMessage}
                   </p>
                 ) : null}
