@@ -256,7 +256,7 @@ export async function createPublicOrder(request: Request) {
         if (!catalog) {
           throw new PublicOrderError("El producto " + product.title + " ya no está publicado en este catálogo.", 409, "PRODUCT_NOT_IN_CATALOG");
         }
-        if (catalog.sellingPrice <= 0) {
+        if (toCents(catalog.sellingPrice) <= 0) {
           throw new PublicOrderError("El producto " + product.title + " no tiene un precio de venta válido.", 409, "INVALID_PRICE");
         }
         if (variant.stock < input.quantity) {
