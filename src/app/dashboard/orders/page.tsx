@@ -37,7 +37,7 @@ type PublicOrder = {
   resellerName: string;
   resellerPhone: string;
   resellerRole: "ADMIN" | "RESELLER";
-  customer: { firstName: string; lastName: string; phone: string; email: string; address: string };
+  customer: { documentId?: string; firstName: string; lastName: string; phone: string; email: string; address: string };
   customerName: string;
   items: PublicOrderItem[];
   subtotal: number;
@@ -228,6 +228,7 @@ export default function OrdersPage() {
                     <div className="public-order-customer">
                       <span className="orders-section-label">Cliente</span>
                       <strong>{order.customerName}</strong>
+                      {order.customer.documentId ? <span>Cédula: {order.customer.documentId}</span> : null}
                       <span>{order.customer.phone}</span>
                       {order.customer.email ? <span>{order.customer.email}</span> : null}
                       {order.customer.address ? <span>{order.customer.address}</span> : null}
