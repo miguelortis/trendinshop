@@ -3359,3 +3359,8 @@ button, input, select, textarea { font: inherit; }
   .public-cart-share-link > label { grid-column: auto; }
   .public-cart-share-link > button { width: 100%; }
 }
+
+
+
+.public-cart-link-button { padding: 0; border: 0; color: #6941c6; background: transparent; font-size: 9px; font-weight: 850; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.public-cart-link-button:hover { color: #53389e; }
