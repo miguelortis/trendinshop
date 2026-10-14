@@ -300,18 +300,30 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
     setOrderError("");
   }
 
-  async function handleDocumentBlur() {
-    const value = normalizeDocumentId(customer.documentId);
-    if (!value) {
+  useEffect(() => {
+    const documentId = normalizeDocumentId(customer.documentId);
+
+    if (!documentId) {
+      setLookupLoading(false);
       setLookupState("idle");
       setLookedUpDocumentId("");
       setLookupMessage("");
       setKnownCustomer(false);
       return;
     }
-    if (lookedUpDocumentId === value && lookupState !== "idle" && lookupState !== "error") return;
-    await lookupCustomer(value);
-  }
+
+    // Wait until the user has stopped typing for two seconds.
+    if (lookedUpDocumentId === documentId &&
+      (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void lookupCustomer(documentId);
+    }, 2000);
+
+    return () => window.clearTimeout(timeout);
+  }, [customer.documentId, lookupCustomer, lookedUpDocumentId, lookupState]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -484,7 +496,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
 
             <aside className="public-cart-checkout-panel">
               <div className="public-cart-panel-heading"><div><span className="panel-kicker">Finalizar</span><h2>Datos del cliente</h2></div></div>
-              <p className="public-cart-checkout-hint">La cédula, el nombre, apellido, teléfono y correo son obligatorios. En este dispositivo podrás recuperarlos automáticamente en la próxima compra.</p>
+              <p className="public-cart-checkout-hint">Introduce tu cédula. Buscaremos el registro automáticamente tras dos segundos sin escribir; después aparecerán solo los campos que necesitas completar.</p>
 
               <form className="public-cart-customer-form" onSubmit={handleSubmit}>
                 <label className="public-order-field">
@@ -505,13 +517,6 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                         setNotificationsEmailConsent(false);
                         setRememberData(false);
                         setOrderError("");
-                      }}
-                      onBlur={() => void handleDocumentBlur()}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleDocumentBlur();
-                        }
                       }}
                       maxLength={40}
                       autoComplete="off"
@@ -536,14 +541,8 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                     {lookupMessage}
                   </p>
                 ) : null}
-                {lookupState === "error" ? (
-                  <button type="button" className="public-cart-link-button" onClick={() => void handleDocumentBlur()} disabled={busy || lookupLoading}>
-                    Volver a buscar la cédula
-                  </button>
-                ) : null}
-
                 {lookupState === "found" ? (
-                  <div className="public-cart-identity-confirmation">
+                  <div className="public-cart-identity-confirmation public-cart-reveal">
                     <p>Encontramos estos datos. Verifica que la cédula corresponda a tu identidad:</p>
                     <div className="public-order-form-grid">
                       <label className="public-order-field">
@@ -560,7 +559,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                 ) : null}
 
                 {lookupState === "not-found" ? (
-                  <>
+                  <div className="public-cart-reveal" key={"new-customer-" + lookedUpDocumentId}>
                     <div className="public-order-form-grid">
                       <label className="public-order-field">
                         <span>Nombre *</span>
@@ -580,11 +579,11 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                       <span>Correo electrónico *</span>
                       <input required maxLength={200} type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer("email", event.target.value)} disabled={busy || lookupLoading} placeholder="tu@correo.com" />
                     </label>
-                  </>
+                  </div>
                 ) : null}
 
                 {lookupComplete ? (
-                  <>
+                  <div className="public-cart-reveal public-cart-reveal-delayed" key={"checkout-fields-" + lookedUpDocumentId}>
                 <label className="public-order-field">
                   <span>Dirección de entrega (opcional)</span>
                   <input value={customer.address} onChange={(event) => updateCustomer("address", event.target.value)} maxLength={300} autoComplete="street-address" disabled={busy} placeholder="Dirección o lugar de entrega" />
@@ -624,7 +623,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   {busy ? "Enviando solicitud..." : "Enviar solicitud de pedido"}
                 </button>
                 <p className="public-order-disclaimer">Esto no es un cobro ni una reserva de inventario. El vendedor confirmará disponibilidad, importe final y entrega.</p>
-                  </>
+                  </div>
                 ) : null}
               </form>
             </aside>
