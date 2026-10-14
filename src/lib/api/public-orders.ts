@@ -198,6 +198,9 @@ export async function createPublicOrder(request: Request) {
     };
     const submittedToken = text(body.customerSessionToken);
     const rememberCustomer = body.rememberCustomer === true;
+    const customerDataConsent = body.customerDataConsent === true;
+    const notificationsWhatsAppConsent = body.notificationsWhatsAppConsent === true;
+    const notificationsEmailConsent = body.notificationsEmailConsent === true;
     const note = text(body.note).slice(0, 500);
 
     if (!mongoose.isValidObjectId(resellerId) || !inputItems) {
@@ -212,6 +215,9 @@ export async function createPublicOrder(request: Request) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedCustomer.email)) {
       return errorResponse("El correo electrónico no tiene un formato válido.");
+    }
+    if (!customerDataConsent) {
+      return errorResponse("Debes aceptar el uso de tus datos para gestionar este pedido y facilitar futuras compras.", 400, "CUSTOMER_DATA_CONSENT_REQUIRED");
     }
     if (submittedToken && !/^[a-f0-9]{64}$/i.test(submittedToken)) {
       return errorResponse("La sesión de cliente guardada no es válida. Completa los datos del cliente nuevamente.", 400, "INVALID_CUSTOMER_SESSION");
@@ -289,6 +295,10 @@ export async function createPublicOrder(request: Request) {
           ...submittedCustomer,
           documentId,
           sessionTokenHashes: customerSessionToken ? [hashToken(customerSessionToken)] : [],
+          dataProcessingConsent: true,
+          dataProcessingConsentAt: new Date(),
+          notificationsWhatsAppConsent,
+          notificationsEmailConsent,
           isActive: true,
         }], { session: session! });
         const newIdentity = createdIdentities[0];
@@ -364,6 +374,10 @@ export async function createPublicOrder(request: Request) {
           resolvedCustomer = submittedCustomer;
         }
         if (resolvedCustomer.address !== identity.address) identity.address = resolvedCustomer.address;
+        identity.dataProcessingConsent = true;
+        identity.dataProcessingConsentAt = identity.dataProcessingConsentAt ?? new Date();
+        identity.notificationsWhatsAppConsent = notificationsWhatsAppConsent;
+        identity.notificationsEmailConsent = notificationsEmailConsent;
         await identity.save({ session: session! });
 
         const customer = await CustomerModel.findOne({
