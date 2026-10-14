@@ -53,6 +53,7 @@ type PublicOrderSource = {
     unitPrice: number;
   }[];
   customer: {
+    documentId?: string;
     firstName: string;
     lastName?: string;
     phone: string;
@@ -449,7 +450,7 @@ export async function createSale(request: Request, userId: string, userRole: str
             }
           : sourceOrder
             ? {
-                documentId: "",
+                documentId: sourceOrder.customer.documentId ?? "",
                 firstName: sourceOrder.customer.firstName,
                 lastName: sourceOrder.customer.lastName ?? "",
                 phone: sourceOrder.customer.phone,
