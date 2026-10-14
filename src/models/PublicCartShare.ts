@@ -5,6 +5,9 @@ const publicCartShareItemSchema = new Schema(
     productId: { type: Schema.Types.ObjectId, ref: "Product", required: true },
     variantId: { type: Schema.Types.ObjectId, ref: "ProductVariant", required: true },
     quantity: { type: Number, required: true, min: 1, max: 100 },
+    productTitle: { type: String, trim: true, default: "" },
+    variantLabel: { type: String, trim: true, default: "" },
+    unitPrice: { type: Number, min: 0, default: 0 },
   },
   { _id: false },
 );
