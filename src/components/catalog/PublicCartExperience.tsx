@@ -309,6 +309,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           address: customer.address,
         },
         customerSessionToken: trustedCustomer ? customerToken : undefined,
+        rememberCustomer: rememberData,
         note: customer.note,
       });
       setSuccess(response.data.order);
