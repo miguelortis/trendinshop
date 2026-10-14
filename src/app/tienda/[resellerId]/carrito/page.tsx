@@ -27,7 +27,8 @@ export default async function PublicCartPage({ params, searchParams }: PageProps
   if (!resellerId.trim()) notFound();
 
   await connectMongoDB();
-  const identityFilter = mongoose.isValidObjectId(resellerId)
+  const isResellerObjectId = /^[a-f0-9]{24}$/i.test(resellerId);
+  const identityFilter = isResellerObjectId
     ? { $or: [{ _id: resellerId }, { storeSlug: resellerId }] }
     : { storeSlug: resellerId };
   const seller = await UserModel.findOne({
