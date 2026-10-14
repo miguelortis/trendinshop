@@ -135,7 +135,7 @@ function normalizeRequestedItems(body: Record<string, unknown>): PublicOrderLine
     const productId = text(item.productId);
     const variantId = text(item.variantId);
     const quantity = Number(item.quantity);
-    if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) ||
+    if (!/^[a-f0-9]{24}$/i.test(productId) || !/^[a-f0-9]{24}$/i.test(variantId) ||
       !Number.isInteger(quantity) || quantity < 1 || quantity > 100 || seen.has(variantId)) return null;
     seen.add(variantId);
     output.push({ productId, variantId, quantity });
@@ -255,6 +255,9 @@ export async function createPublicOrder(request: Request) {
         }
         if (!catalog) {
           throw new PublicOrderError("El producto " + product.title + " ya no está publicado en este catálogo.", 409, "PRODUCT_NOT_IN_CATALOG");
+        }
+        if (catalog.sellingPrice <= 0) {
+          throw new PublicOrderError("El producto " + product.title + " no tiene un precio de venta válido.", 409, "INVALID_PRICE");
         }
         if (variant.stock < input.quantity) {
           throw new PublicOrderError("Solo quedan " + variant.stock + " unidades de " + product.title + " (" + variant.label + ").", 409, "INSUFFICIENT_STOCK");
