@@ -62,7 +62,7 @@ function normalizeCartItems(value: unknown): CartInputItem[] | null {
     const productId = text(item.productId);
     const variantId = text(item.variantId);
     const quantity = Number(item.quantity);
-    if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) ||
+    if (!/^[a-f0-9]{24}$/i.test(productId) || !/^[a-f0-9]{24}$/i.test(variantId) ||
       !Number.isInteger(quantity) || quantity < 1 || quantity > 100) return null;
     if (seen.has(variantId)) return null;
     seen.add(variantId);
@@ -122,9 +122,12 @@ async function hydrateCartItems(
     const productTitle = product?.title ?? snapshot?.productTitle ?? "Producto no disponible";
     const variantLabel = variant?.label ?? snapshot?.variantLabel ?? "Variante no disponible";
     const stock = inCatalog && variant ? Math.max(0, variant.stock) : 0;
-    const available = inCatalog && stock >= input.quantity;
+    const available = inCatalog && unitPrice > 0 && stock >= input.quantity;
     if (strict && !inCatalog) {
       throw new Error("El producto " + productTitle + " ya no está publicado en este catálogo.");
+    }
+    if (strict && unitPrice <= 0) {
+      throw new Error("El producto " + productTitle + " no tiene un precio de venta válido.");
     }
     if (strict && stock < input.quantity) {
       throw new Error("No hay suficientes existencias para " + productTitle + " (" + variantLabel + "). Disponibles: " + stock + ".");
