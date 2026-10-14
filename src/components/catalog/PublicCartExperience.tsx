@@ -453,7 +453,17 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                   <button type="button" className="public-cart-secondary-button" onClick={() => void handleDocumentBlur()} disabled={busy || !customer.documentId.trim()}>
                     Recuperar mis datos guardados
                   </button>
-                  {trustedCustomer ? <span><CheckCircle2 size={13} /> Datos reconocidos</span> : null}
+                  {trustedCustomer ? (
+                    <>
+                      <span><CheckCircle2 size={13} /> Datos reconocidos</span>
+                      <button type="button" className="public-cart-link-button" onClick={() => {
+                        setTrustedCustomer(false);
+                        setCustomerToken("");
+                        setCustomer(blankCustomer);
+                        setLookupMessage("");
+                      }}>Usar otra cédula</button>
+                    </>
+                  ) : null}
                 </div>
                 {lookupMessage ? <p className={trustedCustomer ? "public-cart-lookup-note success" : "public-cart-lookup-note"} role="status">{lookupMessage}</p> : null}
 
