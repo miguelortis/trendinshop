@@ -5,7 +5,7 @@ import { Check, Minus, Plus, ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { readPublicCart, writePublicCart } from "@/lib/public-cart-client";
 
-type Variant = { id: string; label: string; stock: number };
+type Variant = { id: string; label: string; stock: number; sellingPrice?: number };
 type Props = {
   resellerId: string;
   storeSlug: string;
@@ -66,7 +66,7 @@ export function PublicCartControls({
           setNotice("");
         }}>
           {availableVariants.map((item) => (
-            <option value={item.id} key={item.id}>{item.label} · {item.stock} disponibles</option>
+            <option value={item.id} key={item.id}>{item.label} · {money(item.sellingPrice ?? sellingPrice)} · {item.stock} disponibles</option>
           ))}
         </select>
       </label>
@@ -76,7 +76,7 @@ export function PublicCartControls({
           <span>{quantity}</span>
           <button type="button" aria-label="Aumentar cantidad" onClick={() => setQuantity((value) => Math.min(Math.min(100, variant?.stock ?? 1), value + 1))} disabled={!variant || quantity >= Math.min(100, variant.stock)}><Plus size={14} /></button>
         </div>
-        <strong className="public-cart-controls-total">{money(sellingPrice * quantity)}</strong>
+        <strong className="public-cart-controls-total">{money((variant?.sellingPrice ?? sellingPrice) * quantity)}</strong>
       </div>
       <button type="button" className="public-cart-add-button" onClick={addItem}>
         {justAdded ? <Check size={16} /> : <ShoppingCart size={16} />}
