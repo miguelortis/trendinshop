@@ -344,6 +344,7 @@ export async function registerSupplierPayment(request: Request, userId: string, 
     const methodValue = text(body.method || "CASH");
     const allowedMethods: PaymentMethod[] = ["CASH", "TRANSFER", "CARD", "OTHER"];
     const note = text(body.note).slice(0, 500);
+    const reference = text(body.reference).slice(0, 160);
 
     if (!mongoose.isValidObjectId(saleId)) {
       return errorResponse("La venta seleccionada no es válida.", 400, "INVALID_SALE_ID");

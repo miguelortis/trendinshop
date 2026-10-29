@@ -91,9 +91,12 @@ type SupplierPayment = {
   receivedBy?: string;
   allocations: { productTitle: string; variantLabel: string; amount: number }[];
   createdAt: string;
+  status?: "PENDING" | "CONFIRMED" | "REJECTED";
+  reference?: string;
+  reviewNote?: string;
 };
 type SupplierPaymentsResponse = { ok: true; payments: SupplierPayment[] };
-type PaymentForm = { saleId: string; amount: string; method: string; note: string };
+type PaymentForm = { saleId: string; amount: string; method: string; note: string; reference: string };
 
 function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -173,7 +176,8 @@ export default function SupplierPayablesPage() {
   const [search, setSearch] = useState("");
   const [selectedResellerId, setSelectedResellerId] = useState("");
   const [selectedSale, setSelectedSale] = useState<SupplierSale | null>(null);
-  const [form, setForm] = useState<PaymentForm>({ saleId: "", amount: "", method: "TRANSFER", note: "" });
+  const [form, setForm] = useState<PaymentForm>({ saleId: "", amount: "", method: "TRANSFER", note: "", reference: "" });
+  const [actionMessage, setActionMessage] = useState("");
   const [formError, setFormError] = useState("");
 
   const isAdmin = user?.role === "ADMIN";
@@ -208,18 +212,34 @@ export default function SupplierPayablesPage() {
         amount: Number(form.amount),
         method: form.method,
         note: form.note,
+        reference: form.reference,
       })).data;
     },
-    onSuccess: async () => {
+    onSuccess: async (result: { message?: string }) => {
       setSelectedSale(null);
+      setActionMessage(result.message ?? (isAdmin ? "Abono registrado." : "Abono reportado para confirmación."));
       setFormError("");
-      setForm({ saleId: "", amount: "", method: "TRANSFER", note: "" });
+      setForm({ saleId: "", amount: "", method: "TRANSFER", note: "", reference: "" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["supplier-payables"] }),
         queryClient.invalidateQueries({ queryKey: ["supplier-payments"] }),
       ]);
     },
     onError: (error: unknown) => setFormError(errorMessage(error)),
+  });
+
+  const reviewPayment = useMutation({
+    mutationFn: async ({ paymentId, action }: { paymentId: string; action: "CONFIRM" | "REJECT" }) =>
+      (await api.patch("/supplier-payments/" + paymentId, { action })).data as { message?: string },
+    onSuccess: async (result) => {
+      setActionMessage(result.message ?? "El abono fue revisado.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["supplier-payables"] }),
+        queryClient.invalidateQueries({ queryKey: ["supplier-payments"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
+      ]);
+    },
+    onError: (error: unknown) => setActionMessage(errorMessage(error)),
   });
 
   // Recalcular también en el cliente a partir del costo unitario y cantidad. Esto evita
@@ -244,6 +264,9 @@ export default function SupplierPayablesPage() {
     };
   }, [sales]);
   const paymentRows = payments.data ?? [];
+  const pendingForSale = (saleId: string) => paymentRows.reduce((sum, payment) =>
+    payment.saleId === saleId && (payment.status ?? "CONFIRMED") === "PENDING" ? sum + payment.amount : sum, 0);
+  const availableToReport = (sale: SupplierSale) => Math.max(0, fromCents(toCents(sale.supplierBalanceDue) - toCents(pendingForSale(sale._id))));
 
   const filteredSales = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -263,11 +286,13 @@ export default function SupplierPayablesPage() {
     setSelectedSale(sale);
     setForm({
       saleId: sale._id,
-      amount: sale.supplierBalanceDue.toFixed(2),
+      amount: (isAdmin ? sale.supplierBalanceDue : availableToReport(sale)).toFixed(2),
       method: "TRANSFER",
       note: "",
+      reference: "",
     });
     setFormError("");
+    setActionMessage("");
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -278,8 +303,9 @@ export default function SupplierPayablesPage() {
       setFormError("Indica un importe de abono válido.");
       return;
     }
-    if (selectedSale && amount > selectedSale.supplierBalanceDue) {
-      setFormError("El abono no puede superar la deuda de esta venta.");
+    const maximum = selectedSale ? (isAdmin ? selectedSale.supplierBalanceDue : availableToReport(selectedSale)) : 0;
+    if (selectedSale && amount > maximum) {
+      setFormError(isAdmin ? "El abono no puede superar la deuda de esta venta." : "El importe supera el saldo disponible después de tus reportes pendientes.");
       return;
     }
     recordPayment.mutate();
@@ -311,6 +337,8 @@ export default function SupplierPayablesPage() {
           <p>{description}</p>
         </div>
       </section>
+
+      {actionMessage ? <div className="customers-success" role="status">{actionMessage}</div> : null}
 
       <section className="supplier-summary-grid">
         <article className="stat-card">
@@ -374,7 +402,7 @@ export default function SupplierPayablesPage() {
       {!isAdmin ? (
         <div className="supplier-reseller-note">
           <HandCoins size={17} />
-          <span>Para mantener las cuentas verificables, los abonos se reflejan cuando el administrador confirma que recibió tu pago.</span>
+          <span>Registra aquí los abonos que enviaste. Solo se descontarán de tu deuda cuando el administrador confirme la recepción; los reportes pendientes reservan ese importe para evitar duplicarlo.</span>
         </div>
       ) : null}
 
@@ -427,9 +455,9 @@ export default function SupplierPayablesPage() {
                   <div className="supplier-sale-footer-metric"><span>{isAdmin ? "Saldo que el cliente debe al revendedor" : "Saldo que tu cliente te debe"}</span><strong className={sale.customerBalanceDue > 0 ? "due-text" : ""}>{money(sale.customerBalanceDue)}</strong></div>
                   <div className="supplier-sale-footer-metric"><span>Costo mayorista de esta venta</span><strong>{money(sale.supplierAmountDue)}</strong></div>
                   <div className="supplier-sale-footer-metric"><span>Deuda con el proveedor</span><strong className={sale.supplierBalanceDue > 0 ? "due-text" : ""}>{money(sale.supplierBalanceDue)}</strong></div>
-                  {isAdmin && sale.supplierBalanceDue > 0 ? (
+                  {sale.supplierBalanceDue > 0 && (isAdmin || availableToReport(sale) > 0) ? (
                     <button className="product-card-action primary supplier-record-button" type="button" onClick={() => openPayment(sale)}>
-                      <CreditCard size={14} /> Registrar abono recibido
+                      <CreditCard size={14} /> {isAdmin ? "Registrar abono recibido" : "Reportar abono enviado"}
                     </button>
                   ) : null}
                 </div>
@@ -456,16 +484,27 @@ export default function SupplierPayablesPage() {
           <div className="dashboard-empty"><strong>No se pudo cargar el historial</strong><span>{errorMessage(payments.error)}</span></div>
         ) : paymentRows.length ? (
           <div className="supplier-payment-list">
-            {paymentRows.slice(0, 100).map((payment) => (
+            {paymentRows.map((payment) => (
               <div className="supplier-payment-row" key={payment._id}>
                 <div className="supplier-payment-icon"><WalletCards size={17} /></div>
                 <div className="supplier-payment-main">
                   <strong>{payment.saleNumber} · {payment.resellerName}</strong>
+                  <span className={"sale-payment-status " + ((payment.status ?? "CONFIRMED").toLowerCase())}>{(payment.status ?? "CONFIRMED") === "PENDING" ? "Pendiente de confirmación" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "Rechazado" : "Confirmado"}</span>
                   <span>{dateLabel(payment.createdAt)} · {payment.methodLabel}{payment.receivedBy ? " · Recibió: " + payment.receivedBy : ""}</span>
+                  {payment.reference ? <small>Referencia: {payment.reference}</small> : null}
                   {payment.allocations.length ? <small>{payment.allocations.map((item) => item.productTitle + " (" + item.variantLabel + "): " + money(item.amount)).join(" · ")}</small> : null}
                   {payment.note ? <small>{payment.note}</small> : null}
                 </div>
-                <strong className="supplier-payment-amount">{money(payment.amount)}</strong>
+                <div className="supplier-payment-actions">
+                  <strong className="supplier-payment-amount">{money(payment.amount)}</strong>
+                  {isAdmin && (payment.status ?? "CONFIRMED") === "PENDING" ? (
+                    <div className="payment-modal-actions">
+                      <button className="secondary-button" type="button" disabled={reviewPayment.isPending} onClick={() => reviewPayment.mutate({ paymentId: payment._id, action: "REJECT" })}>Rechazar</button>
+                      <button className="primary-button" type="button" disabled={reviewPayment.isPending} onClick={() => reviewPayment.mutate({ paymentId: payment._id, action: "CONFIRM" })}>{reviewPayment.isPending && reviewPayment.variables?.paymentId === payment._id ? "Revisando..." : "Confirmar"}</button>
+                    </div>
+                  ) : null}
+                  {payment.reviewNote ? <small>{payment.reviewNote}</small> : null}
+                </div>
               </div>
             ))}
           </div>
@@ -482,20 +521,21 @@ export default function SupplierPayablesPage() {
         <div className="image-modal-backdrop supplier-payment-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedSale(null); }}>
           <section className="payment-modal supplier-payment-modal" role="dialog" aria-modal="true" aria-labelledby="supplier-payment-title">
             <div className="panel-header">
-              <div><span className="panel-kicker">Confirmar dinero recibido</span><h2 id="supplier-payment-title">Abono de {selectedSale.resellerName}</h2><p>{selectedSale.saleNumber} · {selectedSale.customerName}</p></div>
+              <div><span className="panel-kicker">{isAdmin ? "Confirmar dinero recibido" : "Reportar pago enviado"}</span><h2 id="supplier-payment-title">{isAdmin ? "Abono de " + selectedSale.resellerName : "Abono para el proveedor"}</h2><p>{selectedSale.saleNumber} · {selectedSale.customerName}</p></div>
               <button className="icon-button" type="button" onClick={() => setSelectedSale(null)} aria-label="Cerrar"><X size={17} /></button>
             </div>
-            <div className="payment-modal-balance"><span>Deuda pendiente de esta venta</span><strong>{money(selectedSale.supplierBalanceDue)}</strong></div>
+            <div className="payment-modal-balance"><span>{isAdmin ? "Deuda pendiente de esta venta" : "Saldo disponible para reportar"}</span><strong>{money(isAdmin ? selectedSale.supplierBalanceDue : availableToReport(selectedSale))}</strong></div>
             <form onSubmit={handleSubmit}>
-              <label className="field"><span>Importe recibido (USD)</span><input type="number" min="0.01" max={selectedSale.supplierBalanceDue} step="0.01" inputMode="decimal" required value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
+              <label className="field"><span>{isAdmin ? "Importe recibido (USD)" : "Importe que enviaste (USD)"}</span><input type="number" min="0.01" max={isAdmin ? selectedSale.supplierBalanceDue : availableToReport(selectedSale)} step="0.01" inputMode="decimal" required value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
               <label className="field"><span>Método de pago</span><select required value={form.method} onChange={(event) => setForm({ ...form, method: event.target.value })}><option value="TRANSFER">Transferencia</option><option value="CASH">Efectivo</option><option value="CARD">Tarjeta</option><option value="OTHER">Otro</option></select></label>
-              <label className="field"><span>Nota o referencia (opcional)</span><input maxLength={500} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Referencia, fecha o detalle del pago" /></label>
+              <label className="field"><span>Referencia bancaria / recibo (opcional)</span><input maxLength={160} value={form.reference} onChange={(event) => setForm({ ...form, reference: event.target.value })} placeholder="N.º de transferencia o referencia" /></label>
+              <label className="field"><span>Nota adicional (opcional)</span><input maxLength={500} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Fecha, banco o detalle del pago" /></label>
               {formError ? <div className="auth-error supplier-form-error" role="alert">{formError}</div> : null}
               <div className="payment-modal-actions">
                 <button className="secondary-button" type="button" onClick={() => setSelectedSale(null)}>Cancelar</button>
-                <button className="primary-button" type="submit" disabled={recordPayment.isPending}><CheckCircle2 size={15} /> {recordPayment.isPending ? "Registrando..." : "Confirmar abono"}</button>
+                <button className="primary-button" type="submit" disabled={recordPayment.isPending}><CheckCircle2 size={15} /> {recordPayment.isPending ? "Guardando..." : isAdmin ? "Confirmar abono recibido" : "Reportar abono enviado"}</button>
               </div>
-              <p className="sale-security-note">Confirma solo el dinero que ya recibiste del revendedor. El registro actualizará el saldo pendiente por producto.</p>
+              <p className="sale-security-note">{isAdmin ? "Confirma solo el dinero que ya recibiste. El registro actualizará el saldo pendiente por producto." : "Este reporte no descuenta todavía tu deuda. El administrador deberá confirmar la recepción del dinero."}</p>
             </form>
           </section>
         </div>
