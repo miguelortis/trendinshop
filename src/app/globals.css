@@ -3570,3 +3570,41 @@ button, input, select, textarea { font: inherit; }
   .sales-filter-bar .field input,
   .sales-filter-bar .field select { min-height: 44px; }
 }
+
+
+/* Receivables and sales history refinements */
+.sale-row-item-details { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
+.sale-row-item-detail {
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+  border-radius: 10px;
+  background: var(--surface-subtle, rgba(120, 120, 120, .035));
+  min-width: 0;
+}
+.sale-row-item-detail > span,
+.sale-row-item-detail small { overflow-wrap: anywhere; line-height: 1.45; }
+.sale-row-item-detail small { color: var(--text-secondary, #697586); font-size: 11px; }
+.receivables-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 22px 16px;
+}
+.receivables-filters .field { margin: 0; min-width: 140px; flex: 0 1 180px; }
+.receivables-filters .field input { width: 100%; min-width: 0; min-height: 42px; }
+.receivables-filters .secondary-button { min-height: 42px; }
+@media (max-width: 760px) {
+  .receivables-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 0 14px 14px;
+  }
+  .receivables-filters .field { min-width: 0; width: 100%; }
+  .receivables-filters .field input { min-height: 44px; font-size: 16px; }
+  .receivables-filters .secondary-button { grid-column: 1 / -1; width: 100%; min-height: 44px; justify-content: center; }
+  .sale-row-item-detail { padding: 8px 9px; }
+}
