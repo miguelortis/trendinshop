@@ -17,6 +17,10 @@ export function useCurrentUser() {
       return response.data.user;
     },
     retry: false,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
   });
 }

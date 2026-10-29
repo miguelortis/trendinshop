@@ -3,12 +3,17 @@
 import { ArrowRight, Eye, EyeOff, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Logo } from "@/components/brand/Logo";
 import { api } from "@/lib/api/client";
+import { getPostLoginDestination } from "@/lib/auth/redirect";
+import type { PublicUser } from "@/types/auth";
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const submittingRef = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [email, setEmail] = useState("");
@@ -18,19 +23,32 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
     setError("");
     setLoading(true);
 
     try {
-      await api.post("/auth/login", { email, password, remember });
-      router.replace("/dashboard");
-      router.refresh();
+      const response = await api.post<{ ok: true; user: PublicUser }>("/auth/login", {
+        email: email.trim(),
+        password,
+        remember,
+      });
+
+      // Seed the shared session query before navigation to avoid stale auth state.
+      queryClient.setQueryData(["auth", "me"], response.data.user);
+
+      const requestedNext = new URLSearchParams(window.location.search).get("next");
+      const destination = getPostLoginDestination(requestedNext, response.data.user.role);
+      router.replace(destination);
     } catch (requestError: any) {
       const message =
         requestError?.response?.data?.message ??
         "No pudimos iniciar sesión. Inténtalo de nuevo.";
       setError(message);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }

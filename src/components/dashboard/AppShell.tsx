@@ -8,6 +8,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Logo } from "@/components/brand/Logo";
 import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -33,10 +34,19 @@ const navSections = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const { data: user } = useCurrentUser();
+  const {
+    data: user,
+    isLoading: userLoading,
+    isError: userError,
+    error: userErrorValue,
+    refetch: refetchUser,
+  } = useCurrentUser();
+  const errorStatus = (userErrorValue as { response?: { status?: number } } | null)?.response?.status;
+  const unauthenticated = userError && errorStatus === 401;
 
   const initials = useMemo(() => {
     if (!user) return "TS";
@@ -53,9 +63,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     try {
       await api.post("/auth/logout");
     } finally {
+      queryClient.clear();
       router.replace("/login");
-      router.refresh();
     }
+  }
+
+  if (userLoading || unauthenticated || (!user && !userError)) {
+    return (
+      <div className="dashboard-page">
+        <div className="panel-card dashboard-loading" role="status">Verificando tu sesión...</div>
+      </div>
+    );
+  }
+
+  if (userError && !unauthenticated) {
+    return (
+      <div className="dashboard-page">
+        <div className="panel-card dashboard-empty">
+          <strong>No pudimos verificar tu sesión</strong>
+          <span>Comprueba tu conexión e inténtalo de nuevo.</span>
+          <button type="button" className="secondary-button" onClick={() => void refetchUser()}>Volver a intentar</button>
+        </div>
+      </div>
+    );
   }
 
   return (
