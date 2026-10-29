@@ -32,7 +32,7 @@ type VariantRecord = {
   wholesalePrice?: number | null;
   isActive?: boolean;
 };
-type CatalogPriceRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; isActive: boolean };
+type CatalogPriceRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; isActive: boolean; variantPrices?: { variantId: mongoose.Types.ObjectId | string; sellingPrice: number }[] };
 type CustomerRecord = {
   _id: mongoose.Types.ObjectId;
   documentId: string;
@@ -184,7 +184,7 @@ export async function getSaleOptions(userId: string, userRole: string) {
     }
 
     catalogItems = await ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
-      .select("productId sellingPrice isActive")
+      .select("productId sellingPrice isActive variantPrices")
       .lean() as unknown as CatalogPriceRecord[];
 
     if (userRole === "RESELLER") {
@@ -227,7 +227,7 @@ export async function getSaleOptions(userId: string, userRole: string) {
         options: variant.options ?? [],
         stock: variant.stock,
         defaultUnitPrice: catalogItem
-          ? catalogItem.sellingPrice
+          ? (catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice)
           : (variant.wholesalePrice ?? product.wholesalePrice),
         canEditPrice: userRole === "ADMIN",
       }];
@@ -529,7 +529,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         }
 
         const defaultPrice = catalogItem
-          ? catalogItem.sellingPrice
+          ? (catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice)
           : (variant.wholesalePrice ?? product.wholesalePrice);
         const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
         const unitPrice = sourceOrderPrice !== undefined
