@@ -259,23 +259,7 @@ export async function listSales(request: Request, userId: string, userRole: stri
 
     const andFilters: Record<string, unknown>[] = [];
     if (query) {
-      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\export async function listSales(userId: string, userRole: string) {
-  try {
-    await connectMongoDB();
-    const sales = await SaleModel.find({ ownerId: userId, isActive: true })
-      .sort({ createdAt: -1 })
-      .limit(200)
-      .lean();
-
-    return NextResponse.json({
-      ok: true,
-      sales: sales.map((sale) => serializeSale(sale, userRole)),
-    });
-  } catch (error) {
-    console.error("[SALES_LIST]", error);
-    return errorResponse("No pudimos cargar las ventas.", 500, "INTERNAL_ERROR");
-  }
-}");
+      const escaped = query.replace(/[.*+?^${}()|[\\]\\\\]/g, (character) => "\\" + character);
       const pattern = new RegExp(escaped, "i");
       andFilters.push({ $or: [
         { saleNumber: pattern },
