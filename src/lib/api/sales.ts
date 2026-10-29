@@ -351,7 +351,7 @@ export async function cancelSale(request: Request, saleId: string, userId: strin
         saleId: sale._id,
         status: { $ne: "REJECTED" },
       }).session(transactionSession).exec();
-      const supplierPaid = (sale.items ?? []).some((item) => toCents(Number(item.supplierAmountPaid ?? 0)) > 0);
+      const supplierPaid = (sale.items ?? []).some((item: { supplierAmountPaid?: number }) => toCents(Number(item.supplierAmountPaid ?? 0)) > 0);
       if (hasSupplierPayments || supplierPaid) {
         fail("Esta venta tiene un abono reportado o confirmado al administrador. Revisa ese movimiento antes de anularla.", 409, "SALE_HAS_SUPPLIER_PAYMENTS");
       }

@@ -112,7 +112,7 @@ export async function listResellerCatalog(userId: string, userRole: string) {
       _id: String(item._id),
       productId: String(item.productId),
       sellingPrice: item.sellingPrice,
-      variantPrices: (item.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
+      variantPrices: (item.variantPrices ?? []).map((price: { variantId: mongoose.Types.ObjectId | string; sellingPrice: number }) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }));
@@ -177,7 +177,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
           _id: String(existing._id),
           productId: String(existing.productId),
           sellingPrice: existing.sellingPrice,
-          variantPrices: (existing.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
+          variantPrices: (existing.variantPrices ?? []).map((price: { variantId: mongoose.Types.ObjectId | string; sellingPrice: number }) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
         },
       });
     }
@@ -197,7 +197,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
           _id: String(item._id),
           productId: String(item.productId),
           sellingPrice: item.sellingPrice,
-          variantPrices: (item.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
+          variantPrices: (item.variantPrices ?? []).map((price: { variantId: mongoose.Types.ObjectId | string; sellingPrice: number }) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
         },
       },
       { status: 201 },
