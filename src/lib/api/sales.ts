@@ -290,7 +290,7 @@ export async function listSales(request: Request, userId: string, userRole: stri
       SaleModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
       SaleModel.countDocuments(filter),
       SaleModel.aggregate([
-        { $match: { ...filter, isActive: true } },
+        { $match: { ...filter, ownerId: new mongoose.Types.ObjectId(userId), isActive: true } },
         { $group: {
           _id: null,
           count: { $sum: 1 },

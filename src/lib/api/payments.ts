@@ -119,11 +119,12 @@ export async function listReceivables(request: Request, userId: string) {
     }
     if (andFilters.length) filter.$and = andFilters;
 
+    const aggregateFilter = { ...filter, ownerId: new mongoose.Types.ObjectId(userId) };
     const [sales, total, summaryRows] = await Promise.all([
       SaleModel.find(filter).sort({ createdAt: 1 }).skip((page - 1) * limit).limit(limit).lean() as unknown as Promise<ReceivableRecord[]>,
       SaleModel.countDocuments(filter),
       SaleModel.aggregate([
-        { $match: filter },
+        { $match: aggregateFilter },
         { $group: {
           _id: null,
           count: { $sum: 1 },
@@ -206,11 +207,12 @@ export async function listPayments(request: Request, userId: string) {
         : [{ note: pattern }];
     }
 
+    const aggregateFilter = { ...filter, ownerId: new mongoose.Types.ObjectId(userId) };
     const [payments, total, summaryRows] = await Promise.all([
       SalePaymentModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean() as unknown as Promise<PaymentRecord[]>,
       SalePaymentModel.countDocuments(filter),
       SalePaymentModel.aggregate([
-        { $match: filter },
+        { $match: aggregateFilter },
         { $group: {
           _id: null,
           count: { $sum: 1 },
