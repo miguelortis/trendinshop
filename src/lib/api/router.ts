@@ -15,7 +15,7 @@ import {
 } from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
-import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
+import { cancelSale, createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
@@ -111,8 +111,9 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
 
   if (resource === "sales") {
     if (method === "GET" && action === "options") return getSaleOptions(user.id, user.role);
-    if (method === "GET" && !action) return listSales(user.id, user.role);
+    if (method === "GET" && !action) return listSales(request, user.id, user.role);
     if (method === "POST" && !action) return createSale(request, user.id, user.role);
+    if (method === "PATCH" && action) return cancelSale(request, action, user.id, user.role);
   }
 
   if (resource === "public-orders") {
