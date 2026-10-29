@@ -178,6 +178,7 @@ export default function SupplierPayablesPage() {
   const [selectedSale, setSelectedSale] = useState<SupplierSale | null>(null);
   const [form, setForm] = useState<PaymentForm>({ saleId: "", amount: "", method: "TRANSFER", note: "", reference: "" });
   const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
   const [formError, setFormError] = useState("");
 
   const isAdmin = user?.role === "ADMIN";
@@ -218,6 +219,7 @@ export default function SupplierPayablesPage() {
     onSuccess: async (result: { message?: string }) => {
       setSelectedSale(null);
       setActionMessage(result.message ?? (isAdmin ? "Abono registrado." : "Abono reportado para confirmación."));
+      setActionError("");
       setFormError("");
       setForm({ saleId: "", amount: "", method: "TRANSFER", note: "", reference: "" });
       await Promise.all([
@@ -233,13 +235,14 @@ export default function SupplierPayablesPage() {
       (await api.patch("/supplier-payments/" + paymentId, { action })).data as { message?: string },
     onSuccess: async (result) => {
       setActionMessage(result.message ?? "El abono fue revisado.");
+      setActionError("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["supplier-payables"] }),
         queryClient.invalidateQueries({ queryKey: ["supplier-payments"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
       ]);
     },
-    onError: (error: unknown) => setActionMessage(errorMessage(error)),
+    onError: (error: unknown) => { setActionError(errorMessage(error)); setActionMessage(""); },
   });
 
   // Recalcular también en el cliente a partir del costo unitario y cantidad. Esto evita
@@ -293,6 +296,7 @@ export default function SupplierPayablesPage() {
     });
     setFormError("");
     setActionMessage("");
+    setActionError("");
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -339,6 +343,7 @@ export default function SupplierPayablesPage() {
       </section>
 
       {actionMessage ? <div className="customers-success" role="status">{actionMessage}</div> : null}
+      {actionError ? <div className="auth-error customers-message" role="alert">{actionError}</div> : null}
 
       <section className="supplier-summary-grid">
         <article className="stat-card">
@@ -489,7 +494,7 @@ export default function SupplierPayablesPage() {
                 <div className="supplier-payment-icon"><WalletCards size={17} /></div>
                 <div className="supplier-payment-main">
                   <strong>{payment.saleNumber} · {payment.resellerName}</strong>
-                  <span className={"sale-payment-status " + ((payment.status ?? "CONFIRMED").toLowerCase())}>{(payment.status ?? "CONFIRMED") === "PENDING" ? "Pendiente de confirmación" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "Rechazado" : "Confirmado"}</span>
+                  <span className={"sale-payment-status " + ((payment.status ?? "CONFIRMED") === "PENDING" ? "partial" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "unpaid" : "paid")}>{(payment.status ?? "CONFIRMED") === "PENDING" ? "Pendiente de confirmación" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "Rechazado" : "Confirmado"}</span>
                   <span>{dateLabel(payment.createdAt)} · {payment.methodLabel}{payment.receivedBy ? " · Recibió: " + payment.receivedBy : ""}</span>
                   {payment.reference ? <small>Referencia: {payment.reference}</small> : null}
                   {payment.allocations.length ? <small>{payment.allocations.map((item) => item.productTitle + " (" + item.variantLabel + "): " + money(item.amount)).join(" · ")}</small> : null}
