@@ -122,7 +122,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "receivables" && method === "GET") {
-    return listReceivables(user.id);
+    return listReceivables(request, user.id);
   }
 
   if (resource === "payments") {

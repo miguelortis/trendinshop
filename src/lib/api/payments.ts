@@ -82,17 +82,57 @@ function methodLabel(method: PaymentMethod) {
   return labels[method];
 }
 
-export async function listReceivables(userId: string) {
+export async function listReceivables(request: Request, userId: string) {
   try {
     await connectMongoDB();
-    const sales = await SaleModel.find({
+    const url = new URL(request.url);
+    const page = Math.max(1, Math.trunc(Number(url.searchParams.get("page") || 1) || 1));
+    const limit = Math.min(100, Math.max(1, Math.trunc(Number(url.searchParams.get("limit") || 25) || 25)));
+    const query = text(url.searchParams.get("q")).slice(0, 100);
+    const from = text(url.searchParams.get("from"));
+    const to = text(url.searchParams.get("to"));
+    const filter: Record<string, unknown> = {
       ownerId: userId,
       isActive: true,
       balanceDue: { $gt: 0 },
-    })
-      .sort({ createdAt: 1 })
-      .limit(500)
-      .lean() as unknown as ReceivableRecord[];
+    };
+    const andFilters: Record<string, unknown>[] = [];
+    if (query) {
+      const special = new Set([String.fromCharCode(92), "^", "$", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]);
+      const escaped = query.split("").map((character) => special.has(character) ? String.fromCharCode(92) + character : character).join("");
+      const pattern = new RegExp(escaped, "i");
+      andFilters.push({ $or: [
+        { saleNumber: pattern },
+        { "customerSnapshot.firstName": pattern },
+        { "customerSnapshot.lastName": pattern },
+        { "customerSnapshot.documentId": pattern },
+        { "customerSnapshot.phone": pattern },
+        { "items.productTitle": pattern },
+        { "items.variantLabel": pattern },
+      ] });
+    }
+    if (from || to) {
+      const createdAt: Record<string, Date> = {};
+      if (from && !Number.isNaN(Date.parse(from))) createdAt.$gte = new Date(from + "T00:00:00.000Z");
+      if (to && !Number.isNaN(Date.parse(to))) createdAt.$lte = new Date(to + "T23:59:59.999Z");
+      if (Object.keys(createdAt).length) andFilters.push({ createdAt });
+    }
+    if (andFilters.length) filter.$and = andFilters;
+
+    const [sales, total, summaryRows] = await Promise.all([
+      SaleModel.find(filter).sort({ createdAt: 1 }).skip((page - 1) * limit).limit(limit).lean() as unknown as Promise<ReceivableRecord[]>,
+      SaleModel.countDocuments(filter),
+      SaleModel.aggregate([
+        { $match: filter },
+        { $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$total" },
+          amountPaid: { $sum: "$amountPaid" },
+          balanceDue: { $sum: "$balanceDue" },
+        } },
+      ]).exec() as Promise<{ count?: number; total?: number; amountPaid?: number; balanceDue?: number }[]>,
+    ]);
 
     const receivables = sales.map((sale) => ({
       _id: String(sale._id),
@@ -110,14 +150,23 @@ export async function listReceivables(userId: string) {
         quantity: item.quantity,
       })),
     }));
-
-    return NextResponse.json({ ok: true, receivables });
+    const summary = summaryRows[0] ?? {};
+    return NextResponse.json({
+      ok: true,
+      receivables,
+      pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+      summary: {
+        count: summary.count ?? 0,
+        total: fromCents(toCents(summary.total ?? 0)),
+        amountPaid: fromCents(toCents(summary.amountPaid ?? 0)),
+        balanceDue: fromCents(toCents(summary.balanceDue ?? 0)),
+      },
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("[RECEIVABLES_LIST]", error);
     return errorResponse("No pudimos cargar las cuentas por cobrar.", 500, "INTERNAL_ERROR");
   }
 }
-
 export async function listPayments(request: Request, userId: string) {
   try {
     await connectMongoDB();
