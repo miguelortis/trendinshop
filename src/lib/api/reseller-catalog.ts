@@ -18,6 +18,41 @@ function parseSellingPrice(value: unknown) {
   return Number.isFinite(price) && price > 0 ? price : null;
 }
 
+type CatalogVariantPrice = { variantId: string; sellingPrice: number };
+
+function parseVariantPrices(value: unknown): CatalogVariantPrice[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 500) return null;
+  const seen = new Set<string>();
+  const result: CatalogVariantPrice[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") return null;
+    const row = raw as Record<string, unknown>;
+    const variantId = text(row.variantId);
+    const sellingPrice = parseSellingPrice(row.sellingPrice);
+    if (!mongoose.isValidObjectId(variantId) || sellingPrice === null || seen.has(variantId)) return null;
+    seen.add(variantId);
+    result.push({ variantId, sellingPrice });
+  }
+  return result;
+}
+
+async function validateVariantPrices(value: unknown, productId: string) {
+  const parsed = parseVariantPrices(value);
+  if (!parsed) return null;
+  if (!parsed.length) return [];
+  const valid = await ProductVariantModel.find({
+    _id: { $in: parsed.map((item) => item.variantId) },
+    productId,
+    isActive: true,
+  }).select("_id").lean();
+  if (valid.length !== parsed.length) return null;
+  return parsed.map((item) => ({
+    variantId: new mongoose.Types.ObjectId(item.variantId),
+    sellingPrice: item.sellingPrice,
+  }));
+}
+
 function requireCatalogUser(userRole: string) {
   return userRole === "RESELLER" || userRole === "ADMIN"
     ? null
@@ -41,7 +76,7 @@ export async function listResellerCatalog(userId: string, userRole: string) {
     const [variants, items] = await Promise.all([
       productIds.length
         ? ProductVariantModel.find({ productId: { $in: productIds }, isActive: true })
-            .select("productId stock")
+            .select("productId stock label sku options wholesalePrice")
             .lean()
         : Promise.resolve([]),
       ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
@@ -50,7 +85,12 @@ export async function listResellerCatalog(userId: string, userRole: string) {
     ]);
 
     const stockByProductId = new Map<string, number>();
+    const variantsByProductId = new Map<string, typeof variants>();
     for (const variant of variants) {
+      const variantProductId = String(variant.productId);
+      const variantRows = variantsByProductId.get(variantProductId) ?? [];
+      variantRows.push(variant);
+      variantsByProductId.set(variantProductId, variantRows);
       const productId = String(variant.productId);
       stockByProductId.set(productId, (stockByProductId.get(productId) ?? 0) + variant.stock);
     }
@@ -58,12 +98,21 @@ export async function listResellerCatalog(userId: string, userRole: string) {
     const safeProducts = products.map((product) => ({
       ...product,
       availableStock: stockByProductId.get(String(product._id)) ?? 0,
+      variants: (variantsByProductId.get(String(product._id)) ?? []).map((variant) => ({
+        _id: String(variant._id),
+        label: variant.label,
+        sku: variant.sku,
+        options: variant.options ?? [],
+        stock: variant.stock,
+        wholesalePrice: variant.wholesalePrice ?? product.wholesalePrice,
+      })),
     }));
 
     const safeItems = items.map((item) => ({
       _id: String(item._id),
       productId: String(item.productId),
       sellingPrice: item.sellingPrice,
+      variantPrices: (item.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }));
@@ -100,6 +149,9 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
       return errorResponse("El producto ya no está disponible.", 404, "PRODUCT_NOT_FOUND");
     }
 
+    const variantPrices = await validateVariantPrices(body.variantPrices, productId);
+    if (!variantPrices) return errorResponse("Revisa los precios por variante. Cada variante debe pertenecer al producto y tener un precio válido.");
+
     const hasStock = await ProductVariantModel.exists({
       productId,
       isActive: true,
@@ -116,6 +168,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
 
     if (existing) {
       existing.sellingPrice = sellingPrice;
+      existing.variantPrices = variantPrices;
       existing.isActive = true;
       await existing.save();
       return NextResponse.json({
@@ -124,6 +177,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
           _id: String(existing._id),
           productId: String(existing.productId),
           sellingPrice: existing.sellingPrice,
+          variantPrices: (existing.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
         },
       });
     }
@@ -132,6 +186,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
       resellerId: userId,
       productId,
       sellingPrice,
+      variantPrices,
       isActive: true,
     });
 
@@ -142,6 +197,7 @@ export async function addResellerCatalogItem(request: Request, userId: string, u
           _id: String(item._id),
           productId: String(item.productId),
           sellingPrice: item.sellingPrice,
+          variantPrices: (item.variantPrices ?? []).map((price) => ({ variantId: String(price.variantId), sellingPrice: price.sellingPrice })),
         },
       },
       { status: 201 },
@@ -183,7 +239,11 @@ export async function updateResellerCatalogItem(
       return errorResponse("No encontramos ese producto en tu catálogo.", 404, "CATALOG_ITEM_NOT_FOUND");
     }
 
+    const variantPrices = await validateVariantPrices(body.variantPrices, String(item.productId));
+    if (!variantPrices) return errorResponse("Revisa los precios por variante. Cada variante debe pertenecer al producto y tener un precio válido.");
+
     item.sellingPrice = sellingPrice;
+    item.variantPrices = variantPrices;
     await item.save();
 
     return NextResponse.json({
