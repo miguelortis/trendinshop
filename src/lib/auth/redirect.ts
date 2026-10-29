@@ -32,6 +32,24 @@ export function getPostLoginDestination(
       return DASHBOARD;
     }
 
+    const knownDashboardPath = new Set([
+      "/dashboard",
+      "/dashboard/catalog",
+      "/dashboard/customers",
+      "/dashboard/inventory",
+      "/dashboard/orders",
+      "/dashboard/payments",
+      "/dashboard/receivables",
+      "/dashboard/sales",
+      "/dashboard/sales/new",
+      "/dashboard/settings",
+      "/dashboard/supplier-payables",
+      "/dashboard/products",
+      "/dashboard/products/new",
+    ]).has(pathname) || /^\/dashboard\/products\/[^/]+(?:\/edit)?\/?$/.test(pathname);
+
+    if (!knownDashboardPath) return DASHBOARD;
+
     if (role === "RESELLER") {
       const adminOnly =
         pathname === "/dashboard/inventory" ||
