@@ -18,11 +18,13 @@ type CatalogProduct = {
   images?: { url: string; alt?: string; isPrimary?: boolean }[];
   categoryId?: CategoryRef | string;
   availableStock: number;
+  variants: { _id: string; label: string; sku: string; options: { name: string; value: string }[]; stock: number; wholesalePrice: number }[];
 };
 type CatalogItem = {
   _id: string;
   productId: string;
   sellingPrice: number;
+  variantPrices?: { variantId: string; sellingPrice: number }[];
 };
 type CatalogResponse = {
   ok: true;
@@ -33,6 +35,7 @@ type SavePayload = {
   productId: string;
   itemId?: string;
   sellingPrice: number;
+  variantPrices: { variantId: string; sellingPrice: number }[];
 };
 
 function errorMessage(error: unknown) {
@@ -54,6 +57,7 @@ export default function ResellerCatalogPage() {
   const [search, setSearch] = useState("");
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
+  const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -83,15 +87,16 @@ export default function ResellerCatalogPage() {
   }, [activeTab, catalog.data?.products, itemByProductId, search]);
 
   const saveItem = useMutation({
-    mutationFn: async ({ productId, itemId, sellingPrice }: SavePayload) => {
+    mutationFn: async ({ productId, itemId, sellingPrice, variantPrices }: SavePayload) => {
       if (itemId) {
-        return (await api.patch("/catalog/" + itemId, { sellingPrice })).data;
+        return (await api.patch("/catalog/" + itemId, { sellingPrice, variantPrices })).data;
       }
-      return (await api.post("/catalog", { productId, sellingPrice })).data;
+      return (await api.post("/catalog", { productId, sellingPrice, variantPrices })).data;
     },
     onSuccess: async () => {
       setEditingProductId(null);
       setPriceDraft("");
+      setVariantPriceDrafts({});
       setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["reseller-catalog"] });
     },
@@ -113,6 +118,7 @@ export default function ResellerCatalogPage() {
     setActionError("");
     setEditingProductId(product._id);
     setPriceDraft(item ? String(item.sellingPrice) : "");
+    setVariantPriceDrafts(Object.fromEntries((item?.variantPrices ?? []).map((variant) => [variant.variantId, String(variant.sellingPrice)])));
   }
 
   function handleSavePrice(event: FormEvent<HTMLFormElement>, product: CatalogProduct, item?: CatalogItem) {
@@ -122,6 +128,14 @@ export default function ResellerCatalogPage() {
       productId: product._id,
       itemId: item?._id,
       sellingPrice: Number(priceDraft),
+      variantPrices: product.variants
+        .map((variant) => {
+          const raw = variantPriceDrafts[variant._id];
+          return raw !== undefined && raw.trim() !== "" && Number.isFinite(Number(raw)) && Number(raw) > 0
+            ? { variantId: variant._id, sellingPrice: Number(raw) }
+            : null;
+        })
+        .filter((item): item is { variantId: string; sellingPrice: number } => item !== null),
     });
   }
 
@@ -205,7 +219,7 @@ export default function ResellerCatalogPage() {
             role="tab"
             aria-selected={activeTab === "explore"}
             className={activeTab === "explore" ? "active" : ""}
-            onClick={() => { setActiveTab("explore"); setActionError(""); setEditingProductId(null); }}
+            onClick={() => { setActiveTab("explore"); setActionError(""); setEditingProductId(null); setVariantPriceDrafts({}); }}
           >
             <Search size={15} /> Explorar productos
           </button>
@@ -248,6 +262,7 @@ export default function ResellerCatalogPage() {
             const category = typeof product.categoryId === "object" ? product.categoryId?.name ?? "Sin categoría" : "Sin categoría";
             const primaryImage = product.images?.find((image) => image.isPrimary) ?? product.images?.[0];
             const margin = item ? item.sellingPrice - product.wholesalePrice : Number(priceDraft) - product.wholesalePrice;
+            const catalogVariantPrices = new Map((item?.variantPrices ?? []).map((entry) => [entry.variantId, entry.sellingPrice]));
             const isEditing = editingProductId === product._id;
 
             return (
@@ -287,10 +302,27 @@ export default function ResellerCatalogPage() {
                     </div>
                   ) : null}
 
+                  {item && product.variants.length > 1 ? (
+                    <div className="catalog-variant-profit-list">
+                      <span className="catalog-variant-profit-title">Ganancia estimada por variante</span>
+                      {product.variants.map((variant) => {
+                        const variantPrice = catalogVariantPrices.get(variant._id) ?? item.sellingPrice;
+                        const variantProfit = variantPrice - variant.wholesalePrice;
+                        return (
+                          <div className="catalog-variant-profit-row" key={variant._id}>
+                            <span>{variant.label}</span>
+                            <small>Costo {money(variant.wholesalePrice)} · Venta {money(variantPrice)}</small>
+                            <strong className={variantProfit >= 0 ? "" : "loss"}>{money(variantProfit)}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
                   {isEditing ? (
                     <form className="reseller-catalog-price-form" onSubmit={(event) => handleSavePrice(event, product, item)}>
                       <label className="field">
-                        <span>Tu precio de venta (USD)</span>
+                        <span>Precio general de venta (USD)</span>
                         <input
                           type="number"
                           min="0.01"
@@ -309,11 +341,41 @@ export default function ResellerCatalogPage() {
                           <strong>{money(Number(priceDraft) - product.wholesalePrice)}</strong>
                         </div>
                       ) : null}
+                      {product.variants.length > 1 ? (
+                        <div className="catalog-variant-price-editor">
+                          <div>
+                            <strong>Precios por variante</strong>
+                            <small>Deja el precio general para las variantes que no quieras personalizar.</small>
+                          </div>
+                          {product.variants.map((variant) => {
+                            const raw = variantPriceDrafts[variant._id];
+                            const effectivePrice = raw === undefined || raw.trim() === "" ? Number(priceDraft) : Number(raw);
+                            const estimatedProfit = effectivePrice - variant.wholesalePrice;
+                            return (
+                              <label className="field catalog-variant-price-row" key={variant._id}>
+                                <span>{variant.label} · Costo {money(variant.wholesalePrice)}</span>
+                                <div className="catalog-variant-price-input">
+                                  <input
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    value={raw ?? ""}
+                                    onChange={(event) => setVariantPriceDrafts((current) => ({ ...current, [variant._id]: event.target.value }))}
+                                    placeholder={priceDraft || "Usar precio general"}
+                                  />
+                                  <small className={estimatedProfit >= 0 ? "" : "loss"}>Ganancia: {Number.isFinite(estimatedProfit) ? money(estimatedProfit) : "—"}</small>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                       <div className="reseller-catalog-card-actions">
                         <button className="primary-button" type="submit" disabled={saveItem.isPending}>
                           <Check size={14} /> {saveItem.isPending ? "Guardando..." : "Guardar precio"}
                         </button>
-                        <button className="secondary-button" type="button" onClick={() => { setEditingProductId(null); setPriceDraft(""); }}>
+                        <button className="secondary-button" type="button" onClick={() => { setEditingProductId(null); setPriceDraft(""); setVariantPriceDrafts({}); }}>
                           <X size={14} /> Cancelar
                         </button>
                       </div>
