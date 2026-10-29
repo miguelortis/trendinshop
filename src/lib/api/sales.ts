@@ -125,7 +125,7 @@ function serializeSale(input: unknown, userRole: string) {
       lineCostTotal: _lineCostTotal,
       ...resellerItem
     } = safeItem;
-    return resellerItem;
+    return { ...resellerItem, wholesaleUnitCost: rawItem.unitCost, wholesaleLineCostTotal: rawItem.lineCostTotal };
   });
 
   const result: Record<string, unknown> = {
@@ -259,7 +259,8 @@ export async function listSales(request: Request, userId: string, userRole: stri
 
     const andFilters: Record<string, unknown>[] = [];
     if (query) {
-      const escaped = query.replace(/[.*+?^${}()|[\\]\\\\]/g, (character) => "\\" + character);
+            const specialCharacters = [String.fromCharCode(92), "^", "$", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"];
+      const escaped = query.split("").map((character) => specialCharacters.includes(character) ? String.fromCharCode(92) + character : character).join("");
       const pattern = new RegExp(escaped, "i");
       andFilters.push({ $or: [
         { saleNumber: pattern },
