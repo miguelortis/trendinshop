@@ -22,7 +22,7 @@ import { getDashboardSummary } from "@/lib/api/dashboard-summary";
 import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
 import { lookupPublicCustomer } from "@/lib/api/public-customers";
 import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
-import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
+import { listSupplierPayables, listSupplierPayments, registerSupplierPayment, reviewSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
   cleanupCurrentUserPendingImages,
@@ -136,6 +136,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "supplier-payments") {
     if (method === "GET") return listSupplierPayments(user.id, user.role);
     if (method === "POST" && !action) return registerSupplierPayment(request, user.id, user.role);
+    if (method === "PATCH" && action) return reviewSupplierPayment(request, action, user.id, user.role);
   }
 
   if (resource === "customers") {
