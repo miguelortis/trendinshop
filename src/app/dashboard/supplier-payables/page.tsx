@@ -89,6 +89,7 @@ type SupplierPayment = {
   methodLabel: string;
   note: string;
   receivedBy?: string;
+  reviewedBy?: string;
   allocations: { productTitle: string; variantLabel: string; amount: number }[];
   createdAt: string;
   status?: "PENDING" | "CONFIRMED" | "REJECTED";
@@ -495,7 +496,7 @@ export default function SupplierPayablesPage() {
                 <div className="supplier-payment-main">
                   <strong>{payment.saleNumber} · {payment.resellerName}</strong>
                   <span className={"sale-payment-status " + ((payment.status ?? "CONFIRMED") === "PENDING" ? "partial" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "unpaid" : "paid")}>{(payment.status ?? "CONFIRMED") === "PENDING" ? "Pendiente de confirmación" : (payment.status ?? "CONFIRMED") === "REJECTED" ? "Rechazado" : "Confirmado"}</span>
-                  <span>{dateLabel(payment.createdAt)} · {payment.methodLabel}{payment.receivedBy ? " · Recibió: " + payment.receivedBy : ""}</span>
+                  <span>{dateLabel(payment.createdAt)} · {payment.methodLabel}{payment.receivedBy ? " · Recibió: " + payment.receivedBy : ""}{payment.reviewedBy ? " · Revisó: " + payment.reviewedBy : ""}</span>
                   {payment.reference ? <small>Referencia: {payment.reference}</small> : null}
                   {payment.allocations.length ? <small>{payment.allocations.map((item) => item.productTitle + " (" + item.variantLabel + "): " + money(item.amount)).join(" · ")}</small> : null}
                   {payment.note ? <small>{payment.note}</small> : null}

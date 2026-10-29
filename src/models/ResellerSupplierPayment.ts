@@ -28,6 +28,7 @@ const resellerSupplierPaymentSchema = new Schema(
     submittedAt: { type: Date, default: Date.now, required: true },
     confirmedAt: { type: Date, default: null },
     reviewedAt: { type: Date, default: null },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     reviewNote: { type: String, trim: true, default: "" },
     allocations: { type: [supplierPaymentAllocationSchema], default: [] },
   },

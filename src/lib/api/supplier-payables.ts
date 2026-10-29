@@ -62,6 +62,7 @@ type SupplierPaymentRecord = {
   submittedAt?: Date;
   confirmedAt?: Date | null;
   reviewedAt?: Date | null;
+  reviewedBy?: mongoose.Types.ObjectId | null;
   reviewNote?: string;
   allocations?: {
     productId: mongoose.Types.ObjectId;
@@ -276,6 +277,10 @@ export async function listSupplierPayments(userId: string, userRole: string) {
 
     const saleIds = [...new Set(payments.map((payment) => String(payment.saleId)))];
     const resellerIds = [...new Set(payments.map((payment) => String(payment.resellerId)))];
+    const receiverIds = [...new Set(payments.flatMap((payment) => [
+      payment.receivedBy ? String(payment.receivedBy) : "",
+      payment.reviewedBy ? String(payment.reviewedBy) : "",
+    ]).filter(Boolean))];
     const [sales, resellers, receivers] = await Promise.all([
       saleIds.length
         ? SaleModel.find({ _id: { $in: saleIds } }).select("saleNumber").lean() as unknown as Promise<{_id: mongoose.Types.ObjectId; saleNumber: string}[]>
@@ -284,7 +289,7 @@ export async function listSupplierPayments(userId: string, userRole: string) {
         ? UserModel.find({ _id: { $in: resellerIds } }).select("_id firstName lastName").lean() as unknown as Promise<UserRecord[]>
         : Promise.resolve([]),
       userRole === "ADMIN"
-        ? UserModel.find({ _id: { $in: [...new Set(payments.map((payment) => payment.receivedBy ? String(payment.receivedBy) : "").filter(Boolean))] } })
+        ? UserModel.find({ _id: { $in: receiverIds } })
             .select("_id firstName lastName").lean() as unknown as Promise<UserRecord[]>
         : Promise.resolve([]),
     ]);
@@ -308,6 +313,9 @@ export async function listSupplierPayments(userId: string, userRole: string) {
         methodLabel: methodLabel(payment.method),
         note: payment.note ?? "",
         receivedBy: userRole === "ADMIN" && payment.receivedBy ? userName(receiversById.get(String(payment.receivedBy))) : undefined,
+        reviewedBy: userRole === "ADMIN" && payment.reviewedBy && String(payment.reviewedBy) !== String(payment.receivedBy ?? "")
+          ? userName(receiversById.get(String(payment.reviewedBy)))
+          : undefined,
         status: payment.status ?? "CONFIRMED",
         reference: payment.reference ?? "",
         submittedAt: payment.submittedAt ?? payment.createdAt,
@@ -506,6 +514,7 @@ export async function registerSupplierPayment(request: Request, userId: string, 
         method: methodValue as PaymentMethod,
         note,
         receivedBy: userId,
+        reviewedBy: userId,
         status: "CONFIRMED",
         reference,
         submittedAt: new Date(),
@@ -590,6 +599,7 @@ export async function reviewSupplierPayment(request: Request, paymentId: string,
       if (action === "REJECT") {
         payment.status = "REJECTED";
         payment.reviewedAt = new Date();
+        payment.reviewedBy = new mongoose.Types.ObjectId(adminId);
         payment.reviewNote = reviewNote || "Abono rechazado por el administrador.";
         payment.receivedBy = null;
         await payment.save({ session: transactionSession });
@@ -657,6 +667,7 @@ export async function reviewSupplierPayment(request: Request, paymentId: string,
       payment.allocations = allocations;
       payment.confirmedAt = new Date();
       payment.reviewedAt = new Date();
+      payment.reviewedBy = new mongoose.Types.ObjectId(adminId);
       payment.reviewNote = reviewNote;
       await payment.save({ session: transactionSession });
 
