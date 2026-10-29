@@ -16,6 +16,12 @@ type SaleItem = {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  unitCost?: number;
+  lineCostTotal?: number;
+  wholesaleUnitCost?: number;
+  wholesaleLineCostTotal?: number;
+  unitProfit?: number;
+  lineProfit?: number;
 };
 type Sale = {
   _id: string;
@@ -226,7 +232,6 @@ export default function SalesPage() {
             <div className="sales-list">
               {allSales.map((sale) => {
                 const customer = [sale.customerSnapshot?.firstName, sale.customerSnapshot?.lastName].filter(Boolean).join(" ") || "Cliente ocasional";
-                const itemDescription = sale.items.map((item) => item.quantity + " × " + item.productTitle + " (" + item.variantLabel + ")").join(" · ");
                 const cancelled = sale.saleStatus === "CANCELLED";
                 return (
                   <article className={"sale-row" + (cancelled ? " sale-row-cancelled" : "")} key={sale._id}>
@@ -237,7 +242,21 @@ export default function SalesPage() {
                         <span className={"sale-payment-status " + (cancelled ? "cancelled" : sale.paymentStatus.toLowerCase())}>{cancelled ? "Anulada" : statusLabel(sale.paymentStatus)}</span>
                       </div>
                       <span className="sale-row-customer">{customer} · {dateLabel(sale.createdAt)}</span>
-                      <span className="sale-row-items">{itemDescription}</span>
+                      <div className="sale-row-items sale-row-item-details">
+                        {sale.items.map((item, index) => {
+                          const costPerUnit = isAdmin ? (item.unitCost ?? 0) : (item.wholesaleUnitCost ?? 0);
+                          const costTotal = isAdmin ? (item.lineCostTotal ?? costPerUnit * item.quantity) : (item.wholesaleLineCostTotal ?? costPerUnit * item.quantity);
+                          const profitPerUnit = item.unitProfit ?? item.unitPrice - costPerUnit;
+                          const profitTotal = item.lineProfit ?? item.lineTotal - costTotal;
+                          return (
+                            <div className="sale-row-item-detail" key={sale._id + "-" + item.productTitle + "-" + item.variantLabel + "-" + index}>
+                              <span><strong>{item.quantity} × {item.productTitle}</strong> · {item.variantLabel}</span>
+                              <small>Venta: {money(item.unitPrice)} / unidad · Costo: {money(costPerUnit)} / unidad</small>
+                              <small>Importe: {money(item.lineTotal)} · {isAdmin ? "Ganancia bruta" : "Tu ganancia"}: {money(profitTotal)} ({money(profitPerUnit)} / unidad)</small>
+                            </div>
+                          );
+                        })}
+                      </div>
                       {cancelled && sale.cancellationReason ? <span className="sale-cancellation-reason">Motivo: {sale.cancellationReason}</span> : null}
                     </div>
                     <div className="sale-row-financials">
