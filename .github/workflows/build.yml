@@ -14,7 +14,7 @@ jobs:
     env:
       MONGODB_URI: mongodb://127.0.0.1:27017/trendinshop_ci
       MONGODB_DB: trendinshop_ci
-      SESSION_SECRET: ci-only-session-secret-for-build
+      AUTH_SECRET: ci-only-auth-secret-for-build
       ADMIN_BOOTSTRAP_KEY: ci-only-bootstrap-key
     steps:
       - name: Checkout
