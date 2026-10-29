@@ -126,7 +126,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "payments") {
-    if (method === "GET") return listPayments(user.id);
+    if (method === "GET") return listPayments(request, user.id);
     if (method === "POST" && !action) return registerPayment(request, user.id);
   }
 
