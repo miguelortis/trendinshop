@@ -1,5 +1,13 @@
 import { model, models, Schema, type InferSchemaType } from "mongoose";
 
+const resellerVariantPriceSchema = new Schema(
+  {
+    variantId: { type: Schema.Types.ObjectId, ref: "ProductVariant", required: true },
+    sellingPrice: { type: Number, required: true, min: 0.01 },
+  },
+  { _id: false },
+);
+
 const resellerCatalogItemSchema = new Schema(
   {
     resellerId: {
@@ -15,6 +23,7 @@ const resellerCatalogItemSchema = new Schema(
       index: true,
     },
     sellingPrice: { type: Number, required: true, min: 0 },
+    variantPrices: { type: [resellerVariantPriceSchema], default: [] },
     isActive: { type: Boolean, default: true, required: true, index: true },
   },
   { timestamps: true, versionKey: false },

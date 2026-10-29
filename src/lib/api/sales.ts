@@ -10,6 +10,7 @@ import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { SaleModel } from "@/models/Sale";
 import { SalePaymentModel } from "@/models/SalePayment";
+import { ResellerSupplierPaymentModel } from "@/models/ResellerSupplierPayment";
 
 type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown };
 type ProductRecord = {
@@ -31,7 +32,7 @@ type VariantRecord = {
   wholesalePrice?: number | null;
   isActive?: boolean;
 };
-type CatalogPriceRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; isActive: boolean };
+type CatalogPriceRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; isActive: boolean; variantPrices?: { variantId: mongoose.Types.ObjectId | string; sellingPrice: number }[] };
 type CustomerRecord = {
   _id: mongoose.Types.ObjectId;
   documentId: string;
@@ -124,7 +125,7 @@ function serializeSale(input: unknown, userRole: string) {
       lineCostTotal: _lineCostTotal,
       ...resellerItem
     } = safeItem;
-    return resellerItem;
+    return { ...resellerItem, wholesaleUnitCost: rawItem.unitCost, wholesaleLineCostTotal: rawItem.lineCostTotal };
   });
 
   const result: Record<string, unknown> = {
@@ -142,6 +143,10 @@ function serializeSale(input: unknown, userRole: string) {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     profit: value.grossProfit,
+    saleStatus: value.saleStatus ?? (value.isActive === false ? "CANCELLED" : "ACTIVE"),
+    cancellationReason: value.cancellationReason ?? "",
+    cancelledAt: value.cancelledAt ?? null,
+    isActive: value.isActive !== false,
   };
   if (userRole === "ADMIN") result.totalCost = value.totalCost;
   return result;
@@ -179,7 +184,7 @@ export async function getSaleOptions(userId: string, userRole: string) {
     }
 
     catalogItems = await ResellerCatalogItemModel.find({ resellerId: userId, isActive: true })
-      .select("productId sellingPrice isActive")
+      .select("productId sellingPrice isActive variantPrices")
       .lean() as unknown as CatalogPriceRecord[];
 
     if (userRole === "RESELLER") {
@@ -222,7 +227,7 @@ export async function getSaleOptions(userId: string, userRole: string) {
         options: variant.options ?? [],
         stock: variant.stock,
         defaultUnitPrice: catalogItem
-          ? catalogItem.sellingPrice
+          ? (catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice)
           : (variant.wholesalePrice ?? product.wholesalePrice),
         canEditPrice: userRole === "ADMIN",
       }];
@@ -236,21 +241,168 @@ export async function getSaleOptions(userId: string, userRole: string) {
   }
 }
 
-export async function listSales(userId: string, userRole: string) {
+export async function listSales(request: Request, userId: string, userRole: string) {
   try {
     await connectMongoDB();
-    const sales = await SaleModel.find({ ownerId: userId, isActive: true })
-      .sort({ createdAt: -1 })
-      .limit(200)
-      .lean();
+    const url = new URL(request.url);
+    const page = Math.max(1, Math.trunc(Number(url.searchParams.get("page") || 1) || 1));
+    const limit = Math.min(100, Math.max(1, Math.trunc(Number(url.searchParams.get("limit") || 25) || 25)));
+    const query = text(url.searchParams.get("q")).slice(0, 100);
+    const paymentStatus = text(url.searchParams.get("paymentStatus")).toUpperCase();
+    const saleStatus = text(url.searchParams.get("saleStatus")).toUpperCase();
+    const from = text(url.searchParams.get("from"));
+    const to = text(url.searchParams.get("to"));
+    const filter: Record<string, unknown> = {
+      ownerId: userId,
+      $or: [{ isActive: true }, { isActive: false, saleStatus: "CANCELLED" }],
+    };
 
+    const andFilters: Record<string, unknown>[] = [];
+    if (query) {
+            const specialCharacters = [String.fromCharCode(92), "^", "$", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"];
+      const escaped = query.split("").map((character) => specialCharacters.includes(character) ? String.fromCharCode(92) + character : character).join("");
+      const pattern = new RegExp(escaped, "i");
+      andFilters.push({ $or: [
+        { saleNumber: pattern },
+        { "customerSnapshot.firstName": pattern },
+        { "customerSnapshot.lastName": pattern },
+        { "customerSnapshot.documentId": pattern },
+        { "items.productTitle": pattern },
+        { "items.variantLabel": pattern },
+        { "items.productSku": pattern },
+        { "items.variantSku": pattern },
+      ] });
+    }
+    if (from || to) {
+      const createdAt: Record<string, Date> = {};
+      if (from && !Number.isNaN(Date.parse(from))) createdAt.$gte = new Date(from + "T00:00:00.000Z");
+      if (to && !Number.isNaN(Date.parse(to))) createdAt.$lte = new Date(to + "T23:59:59.999Z");
+      if (Object.keys(createdAt).length) andFilters.push({ createdAt });
+    }
+    if (saleStatus === "CANCELLED") andFilters.push({ saleStatus: "CANCELLED", isActive: false });
+    else {
+      andFilters.push({ isActive: true });
+      if (["UNPAID", "PARTIAL", "PAID"].includes(paymentStatus)) andFilters.push({ paymentStatus });
+    }
+    if (andFilters.length) filter.$and = andFilters;
+
+    const [sales, total, summaryRows] = await Promise.all([
+      SaleModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      SaleModel.countDocuments(filter),
+      SaleModel.aggregate([
+        { $match: { ...filter, ownerId: new mongoose.Types.ObjectId(userId), isActive: true } },
+        { $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$total" },
+          amountPaid: { $sum: "$amountPaid" },
+          balanceDue: { $sum: "$balanceDue" },
+          profit: { $sum: "$grossProfit" },
+        } },
+      ]).exec(),
+    ]);
+    const summary = summaryRows[0] ?? {};
     return NextResponse.json({
       ok: true,
       sales: sales.map((sale) => serializeSale(sale, userRole)),
-    });
+      pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+      summary: {
+        count: summary.count ?? 0,
+        total: Number(Number(summary.total ?? 0).toFixed(2)),
+        amountPaid: Number(Number(summary.amountPaid ?? 0).toFixed(2)),
+        balanceDue: Number(Number(summary.balanceDue ?? 0).toFixed(2)),
+        profit: Number(Number(summary.profit ?? 0).toFixed(2)),
+      },
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("[SALES_LIST]", error);
     return errorResponse("No pudimos cargar las ventas.", 500, "INTERNAL_ERROR");
+  }
+}
+
+export async function cancelSale(request: Request, saleId: string, userId: string, userRole: string) {
+  if (userRole !== "ADMIN" && userRole !== "RESELLER") {
+    return errorResponse("No tienes permiso para anular ventas.", 403, "FORBIDDEN");
+  }
+  if (!mongoose.isValidObjectId(saleId)) return errorResponse("La venta seleccionada no es válida.", 400, "INVALID_SALE_ID");
+
+  let session: mongoose.ClientSession | null = null;
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const reason = text(body.reason).slice(0, 500);
+    if (reason.length < 3) return errorResponse("Indica el motivo de la anulación para conservar el historial.");
+    await connectMongoDB();
+
+    const transactionSession = await mongoose.startSession();
+    session = transactionSession;
+    let cancelled: Record<string, unknown> | null = null;
+    await transactionSession.withTransaction(async () => {
+      const sale = await SaleModel.findOne({ _id: saleId, ownerId: userId, isActive: true })
+        .session(transactionSession).exec();
+      if (!sale) fail("No encontramos una venta activa de tu cuenta.", 404, "SALE_NOT_FOUND");
+      if (sale.saleStatus === "CANCELLED") fail("Esta venta ya está anulada.", 409, "SALE_ALREADY_CANCELLED");
+
+      const hasCustomerPayments = await SalePaymentModel.exists({ saleId: sale._id }).session(transactionSession).exec();
+      if (toCents(sale.amountPaid) > 0 || hasCustomerPayments) {
+        fail("Esta venta ya tiene dinero recibido. Para proteger el historial financiero, no se puede anular hasta registrar el reembolso correspondiente.", 409, "SALE_HAS_CUSTOMER_PAYMENTS");
+      }
+
+      const hasSupplierPayments = await ResellerSupplierPaymentModel.exists({
+        saleId: sale._id,
+        status: { $ne: "REJECTED" },
+      }).session(transactionSession).exec();
+      const supplierPaid = (sale.items ?? []).some((item: { supplierAmountPaid?: number }) => toCents(Number(item.supplierAmountPaid ?? 0)) > 0);
+      if (hasSupplierPayments || supplierPaid) {
+        fail("Esta venta tiene un abono reportado o confirmado al administrador. Revisa ese movimiento antes de anularla.", 409, "SALE_HAS_SUPPLIER_PAYMENTS");
+      }
+
+      for (const item of sale.items) {
+        const variantUpdate = await ProductVariantModel.updateOne(
+          { _id: item.variantId },
+          { $inc: { stock: item.quantity } },
+          { session: transactionSession },
+        ).exec();
+        if (variantUpdate.matchedCount !== 1) fail("No pudimos devolver al inventario la variante de " + item.productTitle + ".", 409, "VARIANT_NOT_FOUND");
+        await InventoryMovementModel.create([{
+          variantId: item.variantId,
+          delta: item.quantity,
+          type: "RETURN",
+          reason: "Anulación de " + sale.saleNumber + ": " + reason,
+          referenceType: "SALE",
+          referenceId: String(sale._id),
+          performedBy: userId,
+        }], { session: transactionSession });
+      }
+
+      sale.isActive = false;
+      sale.saleStatus = "CANCELLED";
+      sale.cancellationReason = reason;
+      sale.cancelledAt = new Date();
+      sale.cancelledBy = new mongoose.Types.ObjectId(userId);
+      await sale.save({ session: transactionSession });
+      await PublicOrderModel.updateOne(
+        { saleId: sale._id, status: "CONVERTED" },
+        { $set: { status: "CANCELLED" } },
+        { session: transactionSession },
+      ).exec();
+
+      cancelled = {
+        _id: String(sale._id),
+        saleNumber: sale.saleNumber,
+        saleStatus: sale.saleStatus,
+        cancellationReason: sale.cancellationReason,
+        cancelledAt: sale.cancelledAt,
+      };
+    });
+
+    if (!cancelled) return errorResponse("No pudimos anular la venta.", 500, "SALE_CANCELLATION_FAILED");
+    return NextResponse.json({ ok: true, sale: cancelled, message: "Venta anulada y existencias restauradas. El registro se conserva en el historial." });
+  } catch (error) {
+    if (error instanceof SaleRequestError) return errorResponse(error.message, error.status, error.code);
+    console.error("[SALE_CANCEL]", error);
+    return errorResponse("No pudimos anular la venta.", 500, "INTERNAL_ERROR");
+  } finally {
+    if (session) await session.endSession();
   }
 }
 
@@ -378,7 +530,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         }
 
         const defaultPrice = catalogItem
-          ? catalogItem.sellingPrice
+          ? (catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice)
           : (variant.wholesalePrice ?? product.wholesalePrice);
         const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
         const unitPrice = sourceOrderPrice !== undefined

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleDollarSign, Clock3, CreditCard, WalletCards, X } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, CreditCard, WalletCards, X } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api/client";
 
@@ -18,7 +18,12 @@ type Receivable = {
   createdAt: string;
   items: { productTitle: string; variantLabel: string; quantity: number }[];
 };
-type ReceivablesResponse = { ok: true; receivables: Receivable[] };
+type ReceivablesResponse = {
+  ok: true;
+  receivables: Receivable[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+  summary: { count: number; total: number; amountPaid: number; balanceDue: number };
+};
 type PaymentPayload = { saleId: string; amount: number; method: string; note: string };
 
 function money(value: number) {
@@ -35,7 +40,19 @@ function dateLabel(value: string) {
 
 export default function ReceivablesPage() {
   const queryClient = useQueryClient();
+  const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchDraft.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft]);
   const [selected, setSelected] = useState<Receivable | null>(null);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
@@ -44,20 +61,17 @@ export default function ReceivablesPage() {
   const [success, setSuccess] = useState("");
 
   const receivables = useQuery({
-    queryKey: ["receivables"],
-    queryFn: async () => (await api.get<ReceivablesResponse>("/receivables")).data.receivables,
+    queryKey: ["receivables", page, search, from, to],
+    queryFn: async () => (await api.get<ReceivablesResponse>("/receivables", {
+      params: { page, limit: 25, q: search, from, to },
+    })).data,
+    placeholderData: (previous) => previous,
   });
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return receivables.data ?? [];
-    return (receivables.data ?? []).filter((sale) =>
-      [sale.saleNumber, sale.customerName, sale.customerSnapshot?.documentId ?? ""].join(" ").toLowerCase().includes(term),
-    );
-  }, [receivables.data, search]);
-
-  const totalDue = (receivables.data ?? []).reduce((sum, sale) => sum + sale.balanceDue, 0);
-  const totalOriginal = (receivables.data ?? []).reduce((sum, sale) => sum + sale.total, 0);
+  const filtered = receivables.data?.receivables ?? [];
+  const totalDue = receivables.data?.summary.balanceDue ?? 0;
+  const totalOriginal = receivables.data?.summary.total ?? 0;
+  const pagination = receivables.data?.pagination;
 
   const payment = useMutation({
     mutationFn: async (payload: PaymentPayload) => (await api.post("/payments", payload)).data as { message?: string },
@@ -113,12 +127,12 @@ export default function ReceivablesPage() {
           <span className="stat-icon"><CircleDollarSign size={18} /></span>
           <div className="stat-label">Saldo pendiente total</div>
           <div className="stat-value">{money(totalDue)}</div>
-          <div className="stat-hint">{filtered.length} cuentas en la vista</div>
+          <div className="stat-hint">{pagination?.total ?? 0} cuentas en el filtro</div>
         </article>
         <article className="stat-card">
           <span className="stat-icon"><Clock3 size={18} /></span>
           <div className="stat-label">Ventas por cobrar</div>
-          <div className="stat-value">{receivables.data?.length ?? 0}</div>
+          <div className="stat-value">{receivables.data?.summary.count ?? 0}</div>
           <div className="stat-hint">Operaciones sin liquidar</div>
         </article>
         <article className="stat-card">
@@ -137,8 +151,23 @@ export default function ReceivablesPage() {
           <div><span className="panel-kicker">Cobros pendientes</span><h2>Saldo por venta</h2></div>
           <label className="search-field receivables-search">
             <CreditCard size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar venta o cliente..." aria-label="Buscar cuentas por cobrar" />
+            <input value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Buscar venta, cliente o producto..." aria-label="Buscar cuentas por cobrar" />
           </label>
+        </div>
+        <div className="receivables-filters">
+          <label className="field">
+            <span>Desde</span>
+            <input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
+          </label>
+          <label className="field">
+            <span>Hasta</span>
+            <input type="date" min={from || undefined} value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
+          </label>
+          {(searchDraft || from || to) ? (
+            <button className="secondary-button" type="button" onClick={() => { setSearchDraft(""); setSearch(""); setFrom(""); setTo(""); setPage(1); }}>
+              <X size={14} /> Limpiar filtros
+            </button>
+          ) : null}
         </div>
 
         {receivables.isLoading ? (
@@ -150,6 +179,7 @@ export default function ReceivablesPage() {
             <button className="secondary-button" type="button" onClick={() => void receivables.refetch()}>Intentar de nuevo</button>
           </div>
         ) : filtered.length ? (
+          <>
           <div className="receivables-list">
             {filtered.map((sale) => (
               <article className="receivable-row" key={sale._id}>
@@ -172,11 +202,19 @@ export default function ReceivablesPage() {
               </article>
             ))}
           </div>
+          <nav className="sales-pagination" aria-label="Paginación de cuentas por cobrar">
+            <span>Página {pagination?.page ?? page} de {pagination?.pages ?? 1}</span>
+            <div>
+              <button className="secondary-button" type="button" disabled={page <= 1 || receivables.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> Anterior</button>
+              <button className="secondary-button" type="button" disabled={page >= (pagination?.pages ?? 1) || receivables.isFetching} onClick={() => setPage((value) => value + 1)}>Siguiente <ChevronRight size={15} /></button>
+            </div>
+          </nav>
+          </>
         ) : (
           <div className="dashboard-empty compact">
             <div className="dashboard-empty-icon"><Check size={20} /></div>
-            <strong>{search ? "No encontramos coincidencias" : "Todo está al día"}</strong>
-            <span>{search ? "Prueba con otro número de venta o cliente." : "No hay saldos pendientes en tus ventas registradas."}</span>
+            <strong>{search || from || to ? "No encontramos coincidencias" : "Todo está al día"}</strong>
+            <span>{search || from || to ? "Prueba con otro término o período." : "No hay saldos pendientes en tus ventas registradas."}</span>
           </div>
         )}
       </section>

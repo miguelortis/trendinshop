@@ -32,6 +32,7 @@ type SellerRecord = {
 
 type CatalogItemRecord = {
   sellingPrice: number;
+  variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[];
 };
 
 type ProductImageRecord = {
@@ -71,7 +72,7 @@ type PublicProductData = {
     images: ProductImageRecord[];
     sellingPrice: number;
     available: boolean;
-    variants: { id: string; label: string; stock: number }[];
+    variants: { id: string; label: string; stock: number; sellingPrice: number }[];
   };
 };
 
@@ -121,7 +122,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     productId,
     isActive: true,
   })
-    .select("sellingPrice")
+    .select("sellingPrice variantPrices")
     .lean() as unknown as CatalogItemRecord | null;
 
   if (!catalogItem) return null;
@@ -166,6 +167,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
         id: String(variant._id),
         label: variantLabel(variant),
         stock: variant.stock,
+        sellingPrice: catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice,
       })),
     },
   };
@@ -224,9 +226,12 @@ export default async function PublicProductPage({ params }: PageProps) {
   const { product, sellerName } = data;
   const primaryImage = product.images.find((item) => item.isPrimary) ?? product.images[0];
   const shareUrl = "/tienda/" + resellerId + "/producto/" + productId;
+  const variantPrices = product.variants.map((variant) => variant.sellingPrice);
+  const displayPrice = variantPrices.length ? Math.min(...variantPrices) : product.sellingPrice;
+  const maxVariantPrice = variantPrices.length ? Math.max(...variantPrices) : product.sellingPrice;
   const shareDescription = product.description
     ? product.description.slice(0, 180)
-    : product.title + " · " + money(product.sellingPrice);
+    : product.title + " · " + money(displayPrice);
 
   return (
     <main className="public-catalog-shell public-product-shell">
@@ -261,7 +266,7 @@ export default async function PublicProductPage({ params }: PageProps) {
             <h1>{product.title}</h1>
             <p className="public-product-seller">Publicado por <strong>{sellerName}</strong></p>
             {data.sellerDescription ? <p className="public-product-seller-description">{data.sellerDescription}</p> : null}
-            <div className="public-product-price">{money(product.sellingPrice)}</div>
+            <div className="public-product-price">{maxVariantPrice > displayPrice ? "Desde " + money(displayPrice) : money(displayPrice)}</div>
             <span className={product.available ? "public-product-availability available" : "public-product-availability unavailable"}>
               {product.available ? "Disponible para pedir" : "Agotado por el momento"}
             </span>

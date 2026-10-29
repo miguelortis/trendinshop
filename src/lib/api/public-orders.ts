@@ -235,7 +235,7 @@ export async function createPublicOrder(request: Request) {
           resellerId: seller._id,
           productId: { $in: productIds },
           isActive: true,
-        }).select("productId sellingPrice").session(session!).lean() as unknown as Promise<{ productId: mongoose.Types.ObjectId; sellingPrice: number }[]>,
+        }).select("productId sellingPrice variantPrices").session(session!).lean() as unknown as Promise<{ productId: mongoose.Types.ObjectId; sellingPrice: number; variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[] }[]>,
         ProductModel.find({ _id: { $in: productIds }, isActive: true })
           .select("_id title sku").session(session!).lean() as unknown as Promise<PublicProductForOrder[]>,
         ProductVariantModel.find({ _id: { $in: variantIds }, isActive: true })
@@ -255,13 +255,15 @@ export async function createPublicOrder(request: Request) {
         if (!catalog) {
           throw new PublicOrderError("El producto " + product.title + " ya no está publicado en este catálogo.", 409, "PRODUCT_NOT_IN_CATALOG");
         }
-        if (toCents(catalog.sellingPrice) <= 0) {
+        const variantSellingPrice = catalog.variantPrices?.find((price) => String(price.variantId) === input.variantId)?.sellingPrice;
+        const effectiveSellingPrice = variantSellingPrice ?? catalog.sellingPrice;
+        if (toCents(effectiveSellingPrice) <= 0) {
           throw new PublicOrderError("El producto " + product.title + " no tiene un precio de venta válido.", 409, "INVALID_PRICE");
         }
         if (variant.stock < input.quantity) {
           throw new PublicOrderError("Solo quedan " + variant.stock + " unidades de " + product.title + " (" + variant.label + ").", 409, "INSUFFICIENT_STOCK");
         }
-        const unitPrice = fromCents(toCents(catalog.sellingPrice));
+        const unitPrice = fromCents(toCents(effectiveSellingPrice));
         const lineTotal = fromCents(toCents(unitPrice) * input.quantity);
         return {
           productId: product._id,

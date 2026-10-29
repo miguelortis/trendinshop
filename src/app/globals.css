@@ -3380,3 +3380,231 @@ button, input, select, textarea { font: inherit; }
 
 .public-cart-link-button { padding: 0; border: 0; color: #6941c6; background: transparent; font-size: 9px; font-weight: 850; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .public-cart-link-button:hover { color: #53389e; }
+
+
+
+/* Operational readiness: dense financial forms and compact, touch-friendly mobile layouts. */
+.sales-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(150px, .85fr) repeat(2, minmax(135px, .7fr)) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+}
+.sales-search-field { min-width: 0; }
+.sales-filter-bar .field { margin: 0; min-width: 0; }
+.sales-filter-bar .field input,
+.sales-filter-bar .field select { width: 100%; min-width: 0; }
+.sales-clear-filters { min-height: 42px; white-space: nowrap; }
+.sales-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 22px;
+  border-top: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+  color: var(--text-secondary, #697586);
+  font-size: 13px;
+}
+.sales-pagination > div { display: flex; align-items: center; gap: 8px; }
+.sales-pagination button { min-height: 40px; }
+.sale-row-cancelled { opacity: .83; }
+.sale-cancellation-reason { color: var(--text-secondary, #697586); font-size: 12px; overflow-wrap: anywhere; }
+.sale-cancel-modal > p { line-height: 1.6; color: var(--text-secondary, #697586); font-size: 14px; }
+.catalog-variant-profit-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+  border-radius: 12px;
+}
+.catalog-variant-profit-title { color: var(--text-secondary, #697586); font-size: 12px; font-weight: 700; }
+.catalog-variant-profit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.catalog-variant-profit-row > span { font-weight: 650; }
+.catalog-variant-profit-row small { grid-column: 1; color: var(--text-secondary, #697586); }
+.catalog-variant-profit-row strong { grid-column: 2; grid-row: 1 / span 2; font-variant-numeric: tabular-nums; }
+.catalog-variant-profit-row strong.loss,
+.catalog-variant-price-input small.loss { color: #d92d20; }
+.catalog-variant-price-editor {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+}
+.catalog-variant-price-editor > div:first-child { display: grid; gap: 4px; }
+.catalog-variant-price-editor > div:first-child strong { font-size: 13px; }
+.catalog-variant-price-editor > div:first-child small { color: var(--text-secondary, #697586); font-size: 12px; line-height: 1.45; }
+.catalog-variant-price-row { margin: 0; }
+.catalog-variant-price-row > span { font-size: 12px; }
+.catalog-variant-price-input { display: grid; grid-template-columns: minmax(90px, 1fr) auto; align-items: center; gap: 8px; }
+.catalog-variant-price-input input { min-width: 0; width: 100%; }
+.catalog-variant-price-input small { font-size: 11px; color: var(--text-secondary, #697586); white-space: nowrap; }
+.supplier-payment-actions { display: grid; justify-items: end; gap: 8px; min-width: 150px; }
+.supplier-payment-actions > small { max-width: 220px; color: var(--text-secondary, #697586); overflow-wrap: anywhere; }
+
+@media (max-width: 1050px) {
+  .sales-filter-bar { grid-template-columns: minmax(180px, 1.5fr) minmax(130px, 1fr) repeat(2, minmax(120px, .8fr)); }
+  .sales-clear-filters { grid-column: 1 / -1; justify-self: start; }
+}
+
+@media (max-width: 760px) {
+  .sales-filter-bar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+  }
+  .sales-search-field,
+  .sales-clear-filters { grid-column: 1 / -1; width: 100%; }
+  .sales-filter-bar .field { min-width: 0; }
+  .sales-filter-bar .field > span { display: block; margin-bottom: 6px; }
+  .sales-summary-grid,
+  .supplier-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sales-list-header,
+  .supplier-panel-header { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .sales-count,
+  .supplier-payment-count { max-width: 100%; }
+  .sale-row {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 16px;
+  }
+  .sale-row-icon { grid-column: 1; grid-row: 1; }
+  .sale-row-main { grid-column: 2; grid-row: 1; min-width: 0; }
+  .sale-row-title { flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+  .sale-row-customer,
+  .sale-row-items,
+  .sale-cancellation-reason { overflow-wrap: anywhere; }
+  .sale-row-financials {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    justify-items: start;
+    align-items: start;
+    gap: 7px 12px;
+    width: 100%;
+    min-width: 0;
+    margin-top: 2px;
+  }
+  .sale-row-financials > strong { font-size: 18px; }
+  .sale-row-financials .product-card-action { grid-column: 1 / -1; width: 100%; min-height: 44px; }
+  .sales-pagination { flex-direction: column; align-items: stretch; padding: 14px; }
+  .sales-pagination > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .sales-pagination button { justify-content: center; min-height: 44px; }
+  .supplier-line-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .supplier-line-main { grid-column: 1 / -1; min-width: 0; }
+  .supplier-line-financial { min-width: 0; overflow-wrap: anywhere; }
+  .supplier-sale-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .supplier-sale-footer .supplier-record-button { grid-column: 1 / -1; width: 100%; min-height: 44px; }
+  .supplier-payment-row { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .supplier-payment-main { min-width: 0; flex: 1 1 calc(100% - 48px); overflow-wrap: anywhere; }
+  .supplier-payment-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; min-width: 0; }
+  .supplier-payment-actions .payment-modal-actions { display: flex; flex-wrap: wrap; }
+  .supplier-payment-actions .payment-modal-actions button { min-height: 44px; }
+  .payment-modal {
+    width: calc(100vw - 24px);
+    max-width: 560px;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    margin: 12px;
+  }
+  .payment-modal .field input,
+  .payment-modal .field select,
+  .payment-modal .field textarea { font-size: 16px; min-height: 44px; }
+  .payment-modal .payment-modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .payment-modal .payment-modal-actions > button { min-height: 44px; justify-content: center; }
+  .reseller-catalog-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .reseller-catalog-heading-actions > * { justify-content: center; min-width: 0; min-height: 44px; }
+  .reseller-catalog-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .reseller-catalog-tabs button { min-height: 44px; justify-content: center; padding-inline: 8px; }
+  .reseller-catalog-controls { display: grid; gap: 12px; }
+  .reseller-catalog-search { width: 100%; min-width: 0; }
+  .catalog-variant-price-input { grid-template-columns: minmax(0, 1fr); }
+  .catalog-variant-price-input small { white-space: normal; }
+  .sale-form-layout { grid-template-columns: minmax(0, 1fr); }
+  .sale-summary-column { position: static; }
+  .sale-submit { width: 100%; min-height: 48px; }
+  .sale-form-main .field input,
+  .sale-form-main .field select,
+  .sale-form-main .field textarea { font-size: 16px; min-height: 44px; }
+  .public-cart-controls .public-order-field select { min-height: 46px; font-size: 16px; }
+  .public-cart-add-button { min-height: 48px; }
+}
+
+@media (max-width: 430px) {
+  .sales-summary-grid,
+  .supplier-summary-grid { gap: 10px; }
+  .sales-summary-grid .stat-card,
+  .supplier-summary-grid .stat-card { padding: 13px; min-width: 0; }
+  .sales-summary-grid .stat-value,
+  .supplier-summary-grid .stat-value { font-size: clamp(17px, 5vw, 22px); overflow-wrap: anywhere; }
+  .sale-row { grid-template-columns: 28px minmax(0, 1fr); padding: 13px; }
+  .sale-row-icon { width: 28px; height: 28px; }
+  .sale-row-financials { grid-template-columns: minmax(0, 1fr); }
+  .supplier-line-row,
+  .supplier-sale-footer { grid-template-columns: minmax(0, 1fr); }
+  .supplier-sale-footer .supplier-record-button { grid-column: 1; }
+  .payment-modal .panel-header { align-items: flex-start; gap: 8px; }
+  .payment-modal .payment-modal-actions { grid-template-columns: minmax(0, 1fr); }
+  .reseller-catalog-heading-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Make financial amounts and variant pricing easier to scan on small screens. */
+@media (max-width: 760px) {
+  .dashboard-page input,
+  .dashboard-page select,
+  .dashboard-page textarea { font-size: 16px; }
+  .dashboard-page button,
+  .dashboard-page a.primary-button,
+  .dashboard-page a.secondary-button { touch-action: manipulation; }
+  .sales-filter-bar .field input,
+  .sales-filter-bar .field select { min-height: 44px; }
+}
+
+
+/* Receivables and sales history refinements */
+.sale-row-item-details { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
+.sale-row-item-detail {
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle, rgba(120, 120, 120, .16));
+  border-radius: 10px;
+  background: var(--surface-subtle, rgba(120, 120, 120, .035));
+  min-width: 0;
+}
+.sale-row-item-detail > span,
+.sale-row-item-detail small { overflow-wrap: anywhere; line-height: 1.45; }
+.sale-row-item-detail small { color: var(--text-secondary, #697586); font-size: 11px; }
+.receivables-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 22px 16px;
+}
+.receivables-filters .field { margin: 0; min-width: 140px; flex: 0 1 180px; }
+.receivables-filters .field input { width: 100%; min-width: 0; min-height: 42px; }
+.receivables-filters .secondary-button { min-height: 42px; }
+@media (max-width: 760px) {
+  .receivables-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 0 14px 14px;
+  }
+  .receivables-filters .field { min-width: 0; width: 100%; }
+  .receivables-filters .field input { min-height: 44px; font-size: 16px; }
+  .receivables-filters .secondary-button { grid-column: 1 / -1; width: 100%; min-height: 44px; justify-content: center; }
+  .sale-row-item-detail { padding: 8px 9px; }
+}

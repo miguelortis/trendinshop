@@ -27,7 +27,7 @@ type VariantRecord = {
   sku: string;
   stock: number;
 };
-type CatalogItemRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number };
+type CatalogItemRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[] };
 type SnapshotItem = {
   productId: mongoose.Types.ObjectId;
   variantId: mongoose.Types.ObjectId;
@@ -105,17 +105,19 @@ async function hydrateCartItems(
       resellerId: seller._id,
       productId: { $in: productIds },
       isActive: true,
-    }).select("productId sellingPrice").lean() as unknown as Promise<CatalogItemRecord[]>,
+    }).select("productId sellingPrice variantPrices").lean() as unknown as Promise<CatalogItemRecord[]>,
   ]);
   const productById = new Map(products.map((product) => [String(product._id), product]));
   const variantById = new Map(variants.map((variant) => [String(variant._id), variant]));
-  const priceByProductId = new Map(catalogItems.map((item) => [String(item.productId), item.sellingPrice]));
+  const catalogByProductId = new Map(catalogItems.map((item) => [String(item.productId), item]));
   const snapshotByVariantId = new Map(snapshots.map((item) => [String(item.variantId), item]));
   const output = items.map((input) => {
     const product = productById.get(input.productId);
     const variant = variantById.get(input.variantId);
     const snapshot = snapshotByVariantId.get(input.variantId);
-    const catalogPrice = priceByProductId.get(input.productId);
+    const catalog = catalogByProductId.get(input.productId);
+    const variantPrice = catalog?.variantPrices?.find((price) => String(price.variantId) === input.variantId)?.sellingPrice;
+    const catalogPrice = catalog ? (variantPrice ?? catalog.sellingPrice) : undefined;
     const sameProduct = variant && String(variant.productId) === input.productId;
     const inCatalog = catalogPrice !== undefined && Boolean(product) && Boolean(sameProduct);
     const unitPrice = inCatalog ? fromCents(toCents(Number(catalogPrice))) : Number(snapshot?.unitPrice ?? 0);

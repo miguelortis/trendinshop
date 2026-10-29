@@ -31,6 +31,7 @@ type ResellerRecord = {
 type CatalogItemRecord = {
   productId: mongoose.Types.ObjectId;
   sellingPrice: number;
+  variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[];
 };
 
 type ProductImageRecord = {
@@ -64,7 +65,7 @@ type PublicCatalogProduct = {
   images: ProductImageRecord[];
   sellingPrice: number;
   available: boolean;
-  variants: string[];
+  variants: { id: string; label: string; stock: number; sellingPrice: number }[];
 };
 
 type PublicCatalogData = {
@@ -185,7 +186,12 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       images,
       sellingPrice: item.sellingPrice,
       available: availableVariants.length > 0,
-      variants: availableVariants.map(variantLabel),
+      variants: availableVariants.map((variant) => ({
+        id: String(variant._id),
+        label: variantLabel(variant),
+        stock: variant.stock,
+        sellingPrice: item.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? item.sellingPrice,
+      })),
     }];
   });
 
@@ -288,14 +294,14 @@ export default async function PublicCatalogPage({ params }: PageProps) {
                     {product.description ? <p className="public-catalog-description">{product.description}</p> : null}
                     {product.variants.length ? (
                       <div className="public-catalog-variants" aria-label="Variantes disponibles">
-                        {product.variants.map((variant, index) => (
-                          <span key={variant + "-" + index}>{variant}</span>
+                        {product.variants.map((variant) => (
+                          <span key={variant.id}>{variant.label}</span>
                         ))}
                       </div>
                     ) : null}
                     <div className="public-catalog-price-row">
                       <span>Precio de venta</span>
-                      <strong>{money(product.sellingPrice)}</strong>
+                      <strong>{(() => { const prices = product.variants.map((variant) => variant.sellingPrice); const min = prices.length ? Math.min(...prices) : product.sellingPrice; const max = prices.length ? Math.max(...prices) : product.sellingPrice; return max > min ? "Desde " + money(min) : money(min); })()}</strong>
                     </div>
                   </div>
                 </article>

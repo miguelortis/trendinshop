@@ -15,14 +15,14 @@ import {
 } from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
 import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
-import { createSale, getSaleOptions, listSales } from "@/lib/api/sales";
+import { cancelSale, createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
 import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
 import { lookupPublicCustomer } from "@/lib/api/public-customers";
 import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
-import { listSupplierPayables, listSupplierPayments, registerSupplierPayment } from "@/lib/api/supplier-payables";
+import { listSupplierPayables, listSupplierPayments, registerSupplierPayment, reviewSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
 import {
   cleanupCurrentUserPendingImages,
@@ -111,8 +111,9 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
 
   if (resource === "sales") {
     if (method === "GET" && action === "options") return getSaleOptions(user.id, user.role);
-    if (method === "GET" && !action) return listSales(user.id, user.role);
+    if (method === "GET" && !action) return listSales(request, user.id, user.role);
     if (method === "POST" && !action) return createSale(request, user.id, user.role);
+    if (method === "PATCH" && action) return cancelSale(request, action, user.id, user.role);
   }
 
   if (resource === "public-orders") {
@@ -121,11 +122,11 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "receivables" && method === "GET") {
-    return listReceivables(user.id);
+    return listReceivables(request, user.id);
   }
 
   if (resource === "payments") {
-    if (method === "GET") return listPayments(user.id);
+    if (method === "GET") return listPayments(request, user.id);
     if (method === "POST" && !action) return registerPayment(request, user.id);
   }
 
@@ -136,6 +137,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "supplier-payments") {
     if (method === "GET") return listSupplierPayments(user.id, user.role);
     if (method === "POST" && !action) return registerSupplierPayment(request, user.id, user.role);
+    if (method === "PATCH" && action) return reviewSupplierPayment(request, action, user.id, user.role);
   }
 
   if (resource === "customers") {

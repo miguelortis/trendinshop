@@ -82,17 +82,58 @@ function methodLabel(method: PaymentMethod) {
   return labels[method];
 }
 
-export async function listReceivables(userId: string) {
+export async function listReceivables(request: Request, userId: string) {
   try {
     await connectMongoDB();
-    const sales = await SaleModel.find({
+    const url = new URL(request.url);
+    const page = Math.max(1, Math.trunc(Number(url.searchParams.get("page") || 1) || 1));
+    const limit = Math.min(100, Math.max(1, Math.trunc(Number(url.searchParams.get("limit") || 25) || 25)));
+    const query = text(url.searchParams.get("q")).slice(0, 100);
+    const from = text(url.searchParams.get("from"));
+    const to = text(url.searchParams.get("to"));
+    const filter: Record<string, unknown> = {
       ownerId: userId,
       isActive: true,
       balanceDue: { $gt: 0 },
-    })
-      .sort({ createdAt: 1 })
-      .limit(500)
-      .lean() as unknown as ReceivableRecord[];
+    };
+    const andFilters: Record<string, unknown>[] = [];
+    if (query) {
+      const special = new Set([String.fromCharCode(92), "^", "$", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]);
+      const escaped = query.split("").map((character) => special.has(character) ? String.fromCharCode(92) + character : character).join("");
+      const pattern = new RegExp(escaped, "i");
+      andFilters.push({ $or: [
+        { saleNumber: pattern },
+        { "customerSnapshot.firstName": pattern },
+        { "customerSnapshot.lastName": pattern },
+        { "customerSnapshot.documentId": pattern },
+        { "customerSnapshot.phone": pattern },
+        { "items.productTitle": pattern },
+        { "items.variantLabel": pattern },
+      ] });
+    }
+    if (from || to) {
+      const createdAt: Record<string, Date> = {};
+      if (from && !Number.isNaN(Date.parse(from))) createdAt.$gte = new Date(from + "T00:00:00.000Z");
+      if (to && !Number.isNaN(Date.parse(to))) createdAt.$lte = new Date(to + "T23:59:59.999Z");
+      if (Object.keys(createdAt).length) andFilters.push({ createdAt });
+    }
+    if (andFilters.length) filter.$and = andFilters;
+
+    const aggregateFilter = { ...filter, ownerId: new mongoose.Types.ObjectId(userId) };
+    const [sales, total, summaryRows] = await Promise.all([
+      SaleModel.find(filter).sort({ createdAt: 1 }).skip((page - 1) * limit).limit(limit).lean() as unknown as Promise<ReceivableRecord[]>,
+      SaleModel.countDocuments(filter),
+      SaleModel.aggregate([
+        { $match: aggregateFilter },
+        { $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$total" },
+          amountPaid: { $sum: "$amountPaid" },
+          balanceDue: { $sum: "$balanceDue" },
+        } },
+      ]).exec() as Promise<{ count?: number; total?: number; amountPaid?: number; balanceDue?: number }[]>,
+    ]);
 
     const receivables = sales.map((sale) => ({
       _id: String(sale._id),
@@ -110,21 +151,77 @@ export async function listReceivables(userId: string) {
         quantity: item.quantity,
       })),
     }));
-
-    return NextResponse.json({ ok: true, receivables });
+    const summary = summaryRows[0] ?? {};
+    return NextResponse.json({
+      ok: true,
+      receivables,
+      pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+      summary: {
+        count: summary.count ?? 0,
+        total: fromCents(toCents(summary.total ?? 0)),
+        amountPaid: fromCents(toCents(summary.amountPaid ?? 0)),
+        balanceDue: fromCents(toCents(summary.balanceDue ?? 0)),
+      },
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("[RECEIVABLES_LIST]", error);
     return errorResponse("No pudimos cargar las cuentas por cobrar.", 500, "INTERNAL_ERROR");
   }
 }
-
-export async function listPayments(userId: string) {
+export async function listPayments(request: Request, userId: string) {
   try {
     await connectMongoDB();
-    const payments = await SalePaymentModel.find({ ownerId: userId })
-      .sort({ createdAt: -1 })
-      .limit(500)
-      .lean() as unknown as PaymentRecord[];
+    const url = new URL(request.url);
+    const page = Math.max(1, Math.trunc(Number(url.searchParams.get("page") || 1) || 1));
+    const limit = Math.min(100, Math.max(1, Math.trunc(Number(url.searchParams.get("limit") || 25) || 25)));
+    const query = text(url.searchParams.get("q")).slice(0, 100);
+    const method = text(url.searchParams.get("method")).toUpperCase();
+    const from = text(url.searchParams.get("from"));
+    const to = text(url.searchParams.get("to"));
+    const filter: Record<string, unknown> = { ownerId: userId };
+    if (["CASH", "TRANSFER", "CARD", "OTHER"].includes(method)) filter.method = method;
+
+    const createdAt: Record<string, Date> = {};
+    if (from && !Number.isNaN(Date.parse(from))) createdAt.$gte = new Date(from + "T00:00:00.000Z");
+    if (to && !Number.isNaN(Date.parse(to))) createdAt.$lte = new Date(to + "T23:59:59.999Z");
+    if (Object.keys(createdAt).length) filter.createdAt = createdAt;
+
+    if (query) {
+      const special = new Set([String.fromCharCode(92), "^", "$", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]);
+      const escaped = query.split("").map((character) => special.has(character) ? String.fromCharCode(92) + character : character).join("");
+      const pattern = new RegExp(escaped, "i");
+      const matchingSaleIds = await SaleModel.find({
+        ownerId: userId,
+        isActive: true,
+        $or: [
+          { saleNumber: pattern },
+          { "customerSnapshot.firstName": pattern },
+          { "customerSnapshot.lastName": pattern },
+          { "customerSnapshot.documentId": pattern },
+          { "items.productTitle": pattern },
+          { "items.variantLabel": pattern },
+        ],
+      }).distinct("_id").exec();
+      filter.$or = matchingSaleIds.length
+        ? [{ note: pattern }, { saleId: { $in: matchingSaleIds } }]
+        : [{ note: pattern }];
+    }
+
+    const aggregateFilter = { ...filter, ownerId: new mongoose.Types.ObjectId(userId) };
+    const [payments, total, summaryRows] = await Promise.all([
+      SalePaymentModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean() as unknown as Promise<PaymentRecord[]>,
+      SalePaymentModel.countDocuments(filter),
+      SalePaymentModel.aggregate([
+        { $match: aggregateFilter },
+        { $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$amount" },
+          cashTotal: { $sum: { $cond: [{ $eq: ["$method", "CASH"] }, "$amount", 0] } },
+          transferTotal: { $sum: { $cond: [{ $eq: ["$method", "TRANSFER"] }, "$amount", 0] } },
+        } },
+      ]).exec() as Promise<{ count?: number; total?: number; cashTotal?: number; transferTotal?: number }[]>,
+    ]);
 
     const saleIds = [...new Set(payments.map((payment) => String(payment.saleId)))];
     const sales = saleIds.length
@@ -134,7 +231,6 @@ export async function listPayments(userId: string) {
       : [];
     const salesById = new Map<string, SaleForPayment>();
     for (const sale of sales) salesById.set(String(sale._id), sale);
-
     const result = payments.map((payment) => {
       const sale = salesById.get(String(payment.saleId));
       return {
@@ -149,8 +245,18 @@ export async function listPayments(userId: string) {
         createdAt: payment.createdAt,
       };
     });
-
-    return NextResponse.json({ ok: true, payments: result });
+    const summary = summaryRows[0] ?? {};
+    return NextResponse.json({
+      ok: true,
+      payments: result,
+      pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+      summary: {
+        count: summary.count ?? 0,
+        total: fromCents(toCents(summary.total ?? 0)),
+        cashTotal: fromCents(toCents(summary.cashTotal ?? 0)),
+        transferTotal: fromCents(toCents(summary.transferTotal ?? 0)),
+      },
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("[PAYMENTS_LIST]", error);
     return errorResponse("No pudimos cargar el historial de pagos.", 500, "INTERNAL_ERROR");

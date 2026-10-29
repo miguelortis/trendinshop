@@ -56,7 +56,14 @@ type SupplierPaymentRecord = {
   amount: number;
   method: PaymentMethod;
   note?: string;
-  receivedBy: mongoose.Types.ObjectId;
+  receivedBy?: mongoose.Types.ObjectId | null;
+  status?: "PENDING" | "CONFIRMED" | "REJECTED";
+  reference?: string;
+  submittedAt?: Date;
+  confirmedAt?: Date | null;
+  reviewedAt?: Date | null;
+  reviewedBy?: mongoose.Types.ObjectId | null;
+  reviewNote?: string;
   allocations?: {
     productId: mongoose.Types.ObjectId;
     variantId: mongoose.Types.ObjectId;
@@ -270,6 +277,10 @@ export async function listSupplierPayments(userId: string, userRole: string) {
 
     const saleIds = [...new Set(payments.map((payment) => String(payment.saleId)))];
     const resellerIds = [...new Set(payments.map((payment) => String(payment.resellerId)))];
+    const receiverIds = [...new Set(payments.flatMap((payment) => [
+      payment.receivedBy ? String(payment.receivedBy) : "",
+      payment.reviewedBy ? String(payment.reviewedBy) : "",
+    ]).filter(Boolean))];
     const [sales, resellers, receivers] = await Promise.all([
       saleIds.length
         ? SaleModel.find({ _id: { $in: saleIds } }).select("saleNumber").lean() as unknown as Promise<{_id: mongoose.Types.ObjectId; saleNumber: string}[]>
@@ -278,7 +289,7 @@ export async function listSupplierPayments(userId: string, userRole: string) {
         ? UserModel.find({ _id: { $in: resellerIds } }).select("_id firstName lastName").lean() as unknown as Promise<UserRecord[]>
         : Promise.resolve([]),
       userRole === "ADMIN"
-        ? UserModel.find({ _id: { $in: [...new Set(payments.map((payment) => String(payment.receivedBy)))] } })
+        ? UserModel.find({ _id: { $in: receiverIds } })
             .select("_id firstName lastName").lean() as unknown as Promise<UserRecord[]>
         : Promise.resolve([]),
     ]);
@@ -301,7 +312,16 @@ export async function listSupplierPayments(userId: string, userRole: string) {
         method: payment.method,
         methodLabel: methodLabel(payment.method),
         note: payment.note ?? "",
-        receivedBy: userRole === "ADMIN" ? userName(receiversById.get(String(payment.receivedBy))) : undefined,
+        receivedBy: userRole === "ADMIN" && payment.receivedBy ? userName(receiversById.get(String(payment.receivedBy))) : undefined,
+        reviewedBy: userRole === "ADMIN" && payment.reviewedBy && String(payment.reviewedBy) !== String(payment.receivedBy ?? "")
+          ? userName(receiversById.get(String(payment.reviewedBy)))
+          : undefined,
+        status: payment.status ?? "CONFIRMED",
+        reference: payment.reference ?? "",
+        submittedAt: payment.submittedAt ?? payment.createdAt,
+        confirmedAt: payment.confirmedAt ?? null,
+        reviewedAt: payment.reviewedAt ?? null,
+        reviewNote: payment.reviewNote ?? "",
         allocations: (payment.allocations ?? []).map((allocation) => ({
           productTitle: allocation.productTitle,
           variantLabel: allocation.variantLabel,
@@ -318,9 +338,9 @@ export async function listSupplierPayments(userId: string, userRole: string) {
   }
 }
 
-export async function registerSupplierPayment(request: Request, adminId: string, userRole: string) {
-  if (userRole !== "ADMIN") {
-    return errorResponse("Solo el administrador puede confirmar pagos de revendedores.", 403, "FORBIDDEN");
+export async function registerSupplierPayment(request: Request, userId: string, userRole: string) {
+  if (userRole !== "ADMIN" && userRole !== "RESELLER") {
+    return errorResponse("No tienes permiso para registrar abonos de proveedor.", 403, "FORBIDDEN");
   }
 
   let session: mongoose.ClientSession | null = null;
@@ -332,6 +352,7 @@ export async function registerSupplierPayment(request: Request, adminId: string,
     const methodValue = text(body.method || "CASH");
     const allowedMethods: PaymentMethod[] = ["CASH", "TRANSFER", "CARD", "OTHER"];
     const note = text(body.note).slice(0, 500);
+    const reference = text(body.reference).slice(0, 160);
 
     if (!mongoose.isValidObjectId(saleId)) {
       return errorResponse("La venta seleccionada no es válida.", 400, "INVALID_SALE_ID");
@@ -341,6 +362,61 @@ export async function registerSupplierPayment(request: Request, adminId: string,
     }
     if (!allowedMethods.includes(methodValue as PaymentMethod)) {
       return errorResponse("El método de pago no es válido.", 400, "INVALID_PAYMENT_METHOD");
+    }
+
+    if (userRole === "RESELLER") {
+      await connectMongoDB();
+      const transactionSession = await mongoose.startSession();
+      session = transactionSession;
+      let submitted: Record<string, unknown> | null = null;
+      await transactionSession.withTransaction(async () => {
+        const sale = await SaleModel.findOne({ _id: saleId, ownerId: userId, isActive: true })
+          .session(transactionSession).lean() as unknown as SaleRecord | null;
+        if (!sale) fail("No encontramos esa venta en tu cuenta.", 404, "SALE_NOT_FOUND");
+        const items = normalizedItems(sale, true);
+        const balanceCents = items.reduce((sum, item) => sum + toCents(item.supplierBalanceDue), 0);
+        const pendingRows = await ResellerSupplierPaymentModel.aggregate([
+          { $match: { saleId: sale._id, status: "PENDING" } },
+          { $group: { _id: null, amount: { $sum: "$amount" } } },
+        ]).session(transactionSession).exec() as { amount?: number }[];
+        const reservedCents = toCents(pendingRows[0]?.amount ?? 0);
+        const availableCents = Math.max(0, balanceCents - reservedCents);
+        if (availableCents <= 0) fail("No queda saldo disponible para reportar otro abono. Revisa los abonos pendientes de confirmación.", 409, "NO_REMAINING_BALANCE");
+        if (amountCents > availableCents) fail("El importe supera la deuda libre después de descontar tus abonos pendientes.", 400, "PAYMENT_EXCEEDS_BALANCE");
+        const created = await ResellerSupplierPaymentModel.create([{
+          saleId: sale._id,
+          resellerId: userId,
+          amount: fromCents(amountCents),
+          method: methodValue as PaymentMethod,
+          note,
+          reference,
+          status: "PENDING",
+          submittedAt: new Date(),
+          receivedBy: null,
+          allocations: [],
+        }], { session: transactionSession });
+        const payment = created[0];
+        submitted = {
+          _id: String(payment._id),
+          saleId: String(sale._id),
+          saleNumber: sale.saleNumber,
+          resellerId: userId,
+          amount: payment.amount,
+          method: payment.method,
+          methodLabel: methodLabel(payment.method as PaymentMethod),
+          status: "PENDING",
+          note: payment.note ?? "",
+          reference: payment.reference ?? "",
+          allocations: [],
+          createdAt: payment.createdAt,
+        };
+      });
+      if (!submitted) return errorResponse("No pudimos registrar el abono pendiente.", 500, "PAYMENT_NOT_CREATED");
+      return NextResponse.json({
+        ok: true,
+        payment: submitted,
+        message: "Abono reportado. El administrador debe confirmar la recepción para actualizar la deuda.",
+      }, { status: 201 });
     }
 
     await connectMongoDB();
@@ -437,7 +513,13 @@ export async function registerSupplierPayment(request: Request, adminId: string,
         amount: fromCents(amountCents),
         method: methodValue as PaymentMethod,
         note,
-        receivedBy: adminId,
+        receivedBy: userId,
+        reviewedBy: userId,
+        status: "CONFIRMED",
+        reference,
+        submittedAt: new Date(),
+        confirmedAt: new Date(),
+        reviewedAt: new Date(),
         allocations,
       }], { session: transactionSession });
       const payment = created[0];
@@ -451,6 +533,8 @@ export async function registerSupplierPayment(request: Request, adminId: string,
         method: payment.method,
         methodLabel: methodLabel(payment.method as PaymentMethod),
         note: payment.note ?? "",
+        reference: payment.reference ?? "",
+        status: payment.status ?? "CONFIRMED",
         allocations: allocations.map((allocation) => ({
           productTitle: allocation.productTitle,
           variantLabel: allocation.variantLabel,
@@ -485,6 +569,136 @@ export async function registerSupplierPayment(request: Request, adminId: string,
     }
     console.error("[SUPPLIER_PAYMENT_CREATE]", error);
     return errorResponse("No pudimos registrar el abono del revendedor. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
+  } finally {
+    if (session) await session.endSession();
+  }
+}
+
+
+export async function reviewSupplierPayment(request: Request, paymentId: string, adminId: string, userRole: string) {
+  if (userRole !== "ADMIN") return errorResponse("Solo el administrador puede revisar los abonos reportados.", 403, "FORBIDDEN");
+  if (!mongoose.isValidObjectId(paymentId)) return errorResponse("El abono seleccionado no es válido.", 400, "INVALID_PAYMENT_ID");
+
+  let session: mongoose.ClientSession | null = null;
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const action = text(body.action).toUpperCase();
+    const reviewNote = text(body.note).slice(0, 500);
+    if (action !== "CONFIRM" && action !== "REJECT") return errorResponse("La acción debe ser CONFIRM o REJECT.");
+
+    await connectMongoDB();
+    const transactionSession = await mongoose.startSession();
+    session = transactionSession;
+    let result: Record<string, unknown> | null = null;
+
+    await transactionSession.withTransaction(async () => {
+      const payment = await ResellerSupplierPaymentModel.findOne({ _id: paymentId, status: "PENDING" })
+        .session(transactionSession).exec();
+      if (!payment) fail("El abono ya fue revisado o no existe.", 409, "PAYMENT_NOT_PENDING");
+
+      if (action === "REJECT") {
+        payment.status = "REJECTED";
+        payment.reviewedAt = new Date();
+        payment.reviewedBy = new mongoose.Types.ObjectId(adminId);
+        payment.reviewNote = reviewNote || "Abono rechazado por el administrador.";
+        payment.receivedBy = null;
+        await payment.save({ session: transactionSession });
+        result = { _id: String(payment._id), status: payment.status, reviewedAt: payment.reviewedAt, reviewNote: payment.reviewNote };
+        return;
+      }
+
+      const sale = await SaleModel.findOne({
+        _id: payment.saleId,
+        ownerId: payment.resellerId,
+        isActive: true,
+      }).session(transactionSession).lean() as unknown as SaleRecord | null;
+      if (!sale) fail("No encontramos la venta asociada al abono.", 404, "SALE_NOT_FOUND");
+
+      const lineBalances = sale.items.map((item) => {
+        const quantity = Math.max(0, Math.trunc(item.quantity));
+        const costCents = Math.max(0, toCents(item.unitCost)) * quantity;
+        const paidCents = Math.min(costCents, Math.max(0, toCents(item.supplierAmountPaid ?? 0)));
+        const balanceCents = Math.max(0, costCents - paidCents);
+        return { item, quantity, costCents, paidCents, balanceCents, costTotal: fromCents(costCents) };
+      });
+      const amountCents = toCents(payment.amount);
+      const outstandingCents = lineBalances.reduce((sum, line) => sum + line.balanceCents, 0);
+      if (amountCents > outstandingCents) fail("La deuda cambió desde que se reportó el abono. Revisa el saldo y registra el pago manualmente si corresponde.", 409, "BALANCE_CHANGED");
+      if (outstandingCents <= 0) fail("Esta venta ya está pagada al proveedor.", 409, "SUPPLIER_SALE_ALREADY_PAID");
+
+      let remaining = amountCents;
+      const allocations: { productId: mongoose.Types.ObjectId; variantId: mongoose.Types.ObjectId; productTitle: string; variantLabel: string; amount: number }[] = [];
+      const updatedItems = lineBalances.map(({ item, quantity, costCents, paidCents, balanceCents, costTotal }) => {
+        const applied = Math.min(balanceCents, remaining);
+        remaining -= applied;
+        if (applied > 0) allocations.push({
+          productId: new mongoose.Types.ObjectId(String(item.productId)),
+          variantId: new mongoose.Types.ObjectId(String(item.variantId)),
+          productTitle: item.productTitle,
+          variantLabel: item.variantLabel,
+          amount: fromCents(applied),
+        });
+        const supplierAmountPaid = fromCents(paidCents + applied);
+        const supplierBalanceDue = fromCents(Math.max(0, costCents - paidCents - applied));
+        return {
+          ...item,
+          quantity,
+          lineCostTotal: costTotal,
+          lineProfit: fromCents(toCents(item.lineTotal) - costCents),
+          supplierAmountPaid,
+          supplierBalanceDue,
+        };
+      });
+
+      const totalDueCents = lineBalances.reduce((sum, line) => sum + line.costCents, 0);
+      const totalPaidCents = updatedItems.reduce((sum, item) => sum + toCents(item.supplierAmountPaid ?? 0), 0);
+      const totalBalanceCents = Math.max(0, totalDueCents - totalPaidCents);
+      await SaleModel.updateOne({ _id: sale._id, isActive: true }, { $set: {
+        ownerRole: "RESELLER",
+        items: updatedItems,
+        supplierAmountDue: fromCents(totalDueCents),
+        supplierAmountPaid: fromCents(totalPaidCents),
+        supplierBalanceDue: fromCents(totalBalanceCents),
+        supplierPaymentStatus: totalBalanceCents <= 0 ? "PAID" : totalPaidCents > 0 ? "PARTIAL" : "UNPAID",
+      } }, { session: transactionSession }).exec();
+
+      payment.status = "CONFIRMED";
+      payment.receivedBy = new mongoose.Types.ObjectId(adminId);
+      payment.allocations = allocations;
+      payment.confirmedAt = new Date();
+      payment.reviewedAt = new Date();
+      payment.reviewedBy = new mongoose.Types.ObjectId(adminId);
+      payment.reviewNote = reviewNote;
+      await payment.save({ session: transactionSession });
+
+      result = {
+        _id: String(payment._id),
+        saleId: String(sale._id),
+        saleNumber: sale.saleNumber,
+        resellerId: String(sale.ownerId),
+        amount: payment.amount,
+        method: payment.method,
+        status: payment.status,
+        reference: payment.reference ?? "",
+        allocations: allocations.map((allocation) => ({ productTitle: allocation.productTitle, variantLabel: allocation.variantLabel, amount: allocation.amount })),
+        supplierAmountDue: fromCents(totalDueCents),
+        supplierAmountPaid: fromCents(totalPaidCents),
+        supplierBalanceDue: fromCents(totalBalanceCents),
+        reviewedAt: payment.reviewedAt,
+        reviewNote: payment.reviewNote,
+      };
+    });
+
+    if (!result) return errorResponse("No pudimos revisar el abono.", 500, "PAYMENT_REVIEW_FAILED");
+    return NextResponse.json({
+      ok: true,
+      payment: result,
+      message: action === "CONFIRM" ? "Abono confirmado y deuda actualizada." : "Abono rechazado. La deuda no fue modificada.",
+    });
+  } catch (error) {
+    if (error instanceof SupplierPaymentError) return errorResponse(error.message, error.status, error.code);
+    console.error("[SUPPLIER_PAYMENT_REVIEW]", error);
+    return errorResponse("No pudimos revisar el abono.", 500, "INTERNAL_ERROR");
   } finally {
     if (session) await session.endSession();
   }
