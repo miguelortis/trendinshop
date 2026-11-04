@@ -32,7 +32,7 @@ export async function enforceRateLimit(
         $inc: { count: 1 },
         $setOnInsert: { expiresAt },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, new: true, setDefaultsOnInsert: false },
     ).lean().exec() as { count: number } | null;
   } catch (error) {
     if (!(typeof error === "object" && error !== null && "code" in error && error.code === 11000)) {

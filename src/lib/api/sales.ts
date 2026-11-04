@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CustomerModel } from "@/models/Customer";
+import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { PublicCartShareModel } from "@/models/PublicCartShare";
 import { InventoryMovementModel } from "@/models/InventoryMovement";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
@@ -414,17 +416,51 @@ export async function createSale(request: Request, userId: string, userRole: str
   let session: mongoose.ClientSession | null = null;
   try {
     const body = await request.json() as Record<string, unknown>;
-    const lines = readSaleLines(body.items);
-    if (!lines) {
+    const sharedCartToken = text(body.sharedCartToken);
+    const lines = sharedCartToken ? null : readSaleLines(body.items);
+    if (!sharedCartToken && !lines) {
       return errorResponse("Añade al menos un producto y revisa las variantes y cantidades.");
+    }
+    if (sharedCartToken && !/^[a-f0-9]{64}$/i.test(sharedCartToken)) {
+      return errorResponse("El enlace compartido del carrito no es válido.", 400, "INVALID_SHARED_CART");
     }
 
     const sourcePublicOrderId = text(body.sourcePublicOrderId);
+    if (sourcePublicOrderId && sharedCartToken) {
+      return errorResponse("No combines un pedido existente con un carrito compartido.");
+    }
     if (sourcePublicOrderId && !mongoose.isValidObjectId(sourcePublicOrderId)) {
       return errorResponse("El pedido público de origen no es válido.", 400, "INVALID_PUBLIC_ORDER_ID");
     }
 
     const customerId = text(body.customerId);
+    const customerBody = body.customer && typeof body.customer === "object"
+      ? body.customer as Record<string, unknown>
+      : {};
+    const submittedCustomer = {
+      documentId: text(customerBody.documentId).toUpperCase().replace(/[.\\s-]/g, ""),
+      firstName: text(customerBody.firstName),
+      lastName: text(customerBody.lastName),
+      phone: text(customerBody.phone),
+      email: text(customerBody.email).toLowerCase(),
+      address: text(customerBody.address),
+    };
+    const customerDataConsent = body.customerDataConsent === true;
+    if (sharedCartToken) {
+      if (!customerDataConsent) {
+        return errorResponse("Confirma que tienes autorización del cliente para guardar sus datos.", 400, "CUSTOMER_DATA_CONSENT_REQUIRED");
+      }
+      if (!submittedCustomer.documentId || !submittedCustomer.firstName || !submittedCustomer.lastName || !submittedCustomer.phone ||
+        submittedCustomer.documentId.length > 40 || submittedCustomer.firstName.length > 100 ||
+        submittedCustomer.lastName.length > 100 || submittedCustomer.phone.length > 40 ||
+        submittedCustomer.email.length > 200 || submittedCustomer.address.length > 300) {
+        return errorResponse("Completa la cédula, nombre, apellido y teléfono del cliente.");
+      }
+      if (submittedCustomer.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(submittedCustomer.email)) {
+        return errorResponse("El correo electrónico del cliente no es válido.");
+      }
+      if (customerId) return errorResponse("No combines un cliente guardado con un carrito compartido.");
+    }
     if (customerId && !mongoose.isValidObjectId(customerId)) {
       return errorResponse("El cliente seleccionado no es válido.", 400, "INVALID_CUSTOMER_ID");
     }
@@ -449,8 +485,31 @@ export async function createSale(request: Request, userId: string, userRole: str
 
     await transactionSession.withTransaction(async () => {
       let sourceOrder: PublicOrderSource | null = null;
-      let effectiveLines = lines;
+      let sharedCart: Awaited<ReturnType<typeof PublicCartShareModel.findOne>> | null = null;
+      let effectiveLines = lines ?? [];
       const sourceOrderPriceByVariant = new Map<string, number>();
+      const sharedCartPriceByVariant = new Map<string, number>();
+
+      if (sharedCartToken) {
+        sharedCart = await PublicCartShareModel.findOne({
+          token: sharedCartToken,
+          resellerId: userId,
+          isActive: true,
+          expiresAt: { $gt: new Date() },
+        }).session(transactionSession).exec();
+        if (!sharedCart) {
+          fail("Este carrito ya se utilizó, caducó o no pertenece a tu tienda.", 404, "SHARED_CART_NOT_AVAILABLE");
+        }
+        const sharedLines = readSaleLines(sharedCart.items.map((item) => ({
+          variantId: String(item.variantId),
+          quantity: Number(item.quantity),
+        })));
+        if (!sharedLines) fail("El carrito compartido no contiene productos válidos.", 409, "SHARED_CART_ITEMS_INVALID");
+        effectiveLines = sharedLines;
+        for (const item of sharedCart.items) {
+          sharedCartPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
+        }
+      }
 
       if (sourcePublicOrderId) {
         sourceOrder = await PublicOrderModel.findOne({
@@ -479,7 +538,62 @@ export async function createSale(request: Request, userId: string, userRole: str
       }
 
       let customer: CustomerRecord | null = null;
-      if (customerId) {
+      if (sharedCartToken) {
+        const savedCustomer = await CustomerModel.findOne({
+          ownerId: userId,
+          documentId: submittedCustomer.documentId,
+        }).session(transactionSession).exec();
+        if (savedCustomer) {
+          savedCustomer.firstName = submittedCustomer.firstName;
+          savedCustomer.lastName = submittedCustomer.lastName;
+          savedCustomer.phone = submittedCustomer.phone;
+          savedCustomer.email = submittedCustomer.email;
+          savedCustomer.address = submittedCustomer.address;
+          savedCustomer.dataProcessingConsent = true;
+          savedCustomer.dataProcessingConsentAt = savedCustomer.dataProcessingConsentAt ?? new Date();
+          savedCustomer.isActive = true;
+          await savedCustomer.save({ session: transactionSession });
+          customer = savedCustomer.toObject() as unknown as CustomerRecord;
+        } else {
+          const [createdCustomer] = await CustomerModel.create([{
+            ownerId: userId,
+            ...submittedCustomer,
+            dataProcessingConsent: true,
+            dataProcessingConsentAt: new Date(),
+            isActive: true,
+          }], { session: transactionSession });
+          customer = createdCustomer.toObject() as unknown as CustomerRecord;
+        }
+
+        // Guest customer profiles have no login credentials. They remain private
+        // and are only looked up through the seller-scoped customer directory.
+        const identity = await CustomerIdentityModel.findOne({
+          documentId: submittedCustomer.documentId,
+        }).session(transactionSession).exec();
+        if (!identity) {
+          await CustomerIdentityModel.create([{
+            ...submittedCustomer,
+            sessionTokenHashes: [],
+            convertedUserId: null,
+            dataProcessingConsent: true,
+            dataProcessingConsentAt: new Date(),
+            notificationsWhatsAppConsent: false,
+            notificationsEmailConsent: false,
+            isActive: true,
+          }], { session: transactionSession });
+        } else if (!identity.convertedUserId) {
+          identity.firstName = submittedCustomer.firstName;
+          identity.lastName = submittedCustomer.lastName;
+          identity.phone = submittedCustomer.phone;
+          identity.email = submittedCustomer.email;
+          identity.address = submittedCustomer.address;
+          identity.dataProcessingConsent = true;
+          identity.dataProcessingConsentAt = identity.dataProcessingConsentAt ?? new Date();
+          identity.sessionTokenHashes = [];
+          identity.isActive = true;
+          await identity.save({ session: transactionSession });
+        }
+      } else if (customerId) {
         customer = await CustomerModel.findOne({
           _id: customerId,
           ownerId: userId,
@@ -533,13 +647,19 @@ export async function createSale(request: Request, userId: string, userRole: str
           ? (catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice)
           : (variant.wholesalePrice ?? product.wholesalePrice);
         const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
+        const sharedCartPrice = sharedCartPriceByVariant.get(line.variantId);
+        const currentCatalogPrice = sharedCartPrice !== undefined && catalogItem ? defaultPrice : undefined;
         const unitPrice = sourceOrderPrice !== undefined
           ? parsePrice(sourceOrderPrice)
-          : userRole === "RESELLER" && catalogItem
-            ? parsePrice(defaultPrice)
-            : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
+          : currentCatalogPrice !== undefined
+            ? parsePrice(currentCatalogPrice)
+            : sharedCartPrice !== undefined
+              ? parsePrice(sharedCartPrice)
+              : userRole === "RESELLER" && catalogItem
                 ? parsePrice(defaultPrice)
-                : parsePrice(line.unitPrice));
+                : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
+                    ? parsePrice(defaultPrice)
+                    : parsePrice(line.unitPrice));
         if (unitPrice === null) fail("El precio de venta debe ser mayor que cero.", 400, "INVALID_PRICE");
 
         const unitCost = userRole === "ADMIN"
@@ -590,7 +710,7 @@ export async function createSale(request: Request, userId: string, userRole: str
       const created = await SaleModel.create([{
         saleNumber,
         ownerId: userId,
-        customerId: customerId || null,
+        customerId: customer?._id ?? (customerId || null),
         customerSnapshot: customer
           ? {
               documentId: customer.documentId,
@@ -675,6 +795,11 @@ export async function createSale(request: Request, userId: string, userRole: str
         sourceOrder.saleId = (createdSale as { _id: mongoose.Types.ObjectId })._id;
         sourceOrder.convertedAt = new Date();
         await sourceOrder.save({ session: transactionSession });
+      }
+
+      if (sharedCart) {
+        sharedCart.isActive = false;
+        await sharedCart.save({ session: transactionSession });
       }
     });
 

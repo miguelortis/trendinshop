@@ -7,6 +7,7 @@ import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicCartShareModel } from "@/models/PublicCartShare";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { UserModel } from "@/models/User";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type CartInputItem = { productId: string; variantId: string; quantity: number };
 type SellerRecord = {
@@ -153,6 +154,8 @@ async function hydrateCartItems(
 
 export async function validatePublicCart(request: Request) {
   try {
+    const blocked = await enforceRateLimit(request, "public-cart-validate", 90, 15 * 60 * 1000);
+    if (blocked) return blocked;
     const body = await request.json() as Record<string, unknown>;
     const resellerId = text(body.resellerId);
     const items = normalizeCartItems(body.items);
@@ -177,6 +180,8 @@ export async function validatePublicCart(request: Request) {
 
 export async function createPublicCartShare(request: Request) {
   try {
+    const blocked = await enforceRateLimit(request, "public-cart-share", 20, 60 * 60 * 1000);
+    if (blocked) return blocked;
     const body = await request.json() as Record<string, unknown>;
     const resellerId = text(body.resellerId);
     const items = normalizeCartItems(body.items);
@@ -223,6 +228,8 @@ export async function createPublicCartShare(request: Request) {
 
 export async function getPublicCartShare(request: Request) {
   try {
+    const blocked = await enforceRateLimit(request, "public-cart-share-view", 90, 15 * 60 * 1000);
+    if (blocked) return blocked;
     const token = new URL(request.url).searchParams.get("token")?.trim() ?? "";
     if (!/^[a-f0-9]{64}$/i.test(token)) return errorResponse("El enlace del carrito no es válido.", 404, "CART_SHARE_NOT_FOUND");
     await connectMongoDB();

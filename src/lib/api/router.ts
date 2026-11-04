@@ -60,10 +60,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "POST" && action === "logout") return logoutUser();
   }
 
-  // Los catálogos públicos no requieren sesión para crear un pedido, validar un carrito o compartirlo.
-  if (resource === "public-orders" && method === "POST" && !action) {
-    return createPublicOrder(request);
-  }
+  // La validación y el intercambio de carritos son públicos; registrar un pedido requiere cuenta.
   if (resource === "public-carts") {
     if (method === "POST" && action === "validate") return validatePublicCart(request);
     if (method === "POST" && action === "share") return createPublicCartShare(request);
@@ -113,6 +110,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "public-orders") {
+    if (method === "POST" && !action) return createPublicOrder(request, user.id);
     if (method === "GET" && !action) return listPublicOrders(user.id, user.role);
     if (method === "PATCH" && action) return updatePublicOrder(request, action, user.id, user.role);
   }

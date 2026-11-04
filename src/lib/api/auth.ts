@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { UserModel } from "@/models/User";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
 import { normalizeCustomerDocumentId } from "@/lib/customer-session";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 const COOKIE_BASE = {
   httpOnly: true,
@@ -55,15 +56,16 @@ function email(value: unknown) {
 
 export async function registerUser(request: Request) {
   let createdUserId = "";
-  let convertedCustomerId = "";
   try {
+    const blocked = await enforceRateLimit(request, "register", 6, 60 * 60 * 1000);
+    if (blocked) return blocked;
+
     const body = (await request.json()) as Record<string, unknown>;
-    let documentId = normalizeCustomerDocumentId(body.documentId);
-    let firstName = text(body.firstName);
-    let lastName = text(body.lastName);
-    let userEmail = email(body.email);
-    let phone = text(body.phone);
-    const customerSessionToken = text(body.customerSessionToken);
+    const documentId = normalizeCustomerDocumentId(body.documentId);
+    const firstName = text(body.firstName);
+    const lastName = text(body.lastName);
+    const userEmail = email(body.email);
+    const phone = text(body.phone);
     const password = typeof body.password === "string" ? body.password : "";
     const confirmPassword = typeof body.confirmPassword === "string" ? body.confirmPassword : "";
     const gender = text(body.gender);
@@ -72,7 +74,7 @@ export async function registerUser(request: Request) {
     if (!documentId || !firstName || !lastName || !userEmail || !phone || !password || !confirmPassword || !gender || !birthDate) {
       return errorResponse("Completa todos los campos obligatorios.");
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(userEmail)) {
       return errorResponse("Introduce un correo electrónico válido.");
     }
     if (password.length < 8) return errorResponse("La contraseña debe tener al menos 8 caracteres.");
@@ -86,33 +88,11 @@ export async function registerUser(request: Request) {
     assertAuthConfiguration();
     await connectMongoDB();
 
-    const customerIdentity = await CustomerIdentityModel.findOne({
-      documentId,
-      isActive: true,
-    }).exec();
-
-    if (customerIdentity) {
-      if (customerIdentity.convertedUserId) {
-        return errorResponse("Ya existe una cuenta asociada a esta cédula. Inicia sesión o recupera tu contraseña.", 409, "DOCUMENT_IN_USE");
-      }
-      if (!hasCustomerSessionToken(customerIdentity.sessionTokenHashes, customerSessionToken)) {
-        return errorResponse(
-          "Encontramos un perfil de cliente para esa cédula, pero no se ha podido verificar que sea tuyo en este dispositivo. Abre el enlace en el dispositivo donde guardaste tus datos o contacta al vendedor.",
-          403,
-          "CUSTOMER_PROFILE_VERIFICATION_REQUIRED",
-        );
-      }
-
-      // El perfil guardado es la fuente para los datos personales principales.
-      // No se permite cambiarlos en el formulario de alta.
-      firstName = customerIdentity.firstName;
-      lastName = customerIdentity.lastName;
-      phone = customerIdentity.phone;
-      userEmail = customerIdentity.email;
-      convertedCustomerId = String(customerIdentity._id);
-    } else if (customerSessionToken) {
-      // Un token no puede reutilizarse con otra cédula ni crear una identidad diferente.
-      return errorResponse("Los datos guardados no coinciden con esa cédula.", 403, "CUSTOMER_PROFILE_VERIFICATION_REQUIRED");
+    const existingIdentity = await CustomerIdentityModel.findOne({ documentId, isActive: true })
+      .select("convertedUserId")
+      .lean() as unknown as { convertedUserId?: unknown } | null;
+    if (existingIdentity?.convertedUserId) {
+      return errorResponse("Ya existe una cuenta asociada a esta cédula. Inicia sesión o recupera tu contraseña.", 409, "DOCUMENT_IN_USE");
     }
 
     const [emailExists, documentExists] = await Promise.all([
@@ -137,10 +117,31 @@ export async function registerUser(request: Request) {
     });
     createdUserId = user._id.toString();
 
-    if (customerIdentity) {
-      customerIdentity.convertedUserId = user._id;
-      await customerIdentity.save();
-    }
+    // Si el comprador tenía un perfil de cliente sin contraseña, el registro
+    // vincula el perfil a la cuenta y sustituye sus datos con los verificados
+    // por el propio usuario en este formulario.
+    await CustomerIdentityModel.findOneAndUpdate(
+      { documentId },
+      {
+        $set: {
+          documentId,
+          firstName,
+          lastName,
+          phone,
+          email: userEmail,
+          dataProcessingConsent: true,
+          dataProcessingConsentAt: new Date(),
+          sessionTokenHashes: [],
+          convertedUserId: user._id,
+          isActive: true,
+        },
+        $setOnInsert: {
+          notificationsWhatsAppConsent: false,
+          notificationsEmailConsent: false,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).exec();
 
     const token = await createSessionToken(
       { id: user._id.toString(), role: user.role as "ADMIN" | "RESELLER" },
@@ -159,9 +160,6 @@ export async function registerUser(request: Request) {
     if (createdUserId) {
       try { await UserModel.deleteOne({ _id: createdUserId }); } catch { /* Evitar dejar una cuenta parcial. */ }
     }
-    if (convertedCustomerId) {
-      try { await CustomerIdentityModel.updateOne({ _id: convertedCustomerId, convertedUserId: createdUserId }, { $set: { convertedUserId: null } }); } catch { /* La recuperación no debe ocultar el error original. */ }
-    }
     if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
       return errorResponse("Ya existe una cuenta con esa cédula o correo.", 409, "DUPLICATE_ACCOUNT");
     }
@@ -175,6 +173,8 @@ export async function loginUser(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const userEmail = email(body.email);
     const password = typeof body.password === "string" ? body.password : "";
+    const blocked = await enforceRateLimit(request, "login", 8, 15 * 60 * 1000, userEmail);
+    if (blocked) return blocked;
     const remember = body.remember !== false;
 
     if (!userEmail || !password) {

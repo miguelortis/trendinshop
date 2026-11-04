@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
@@ -10,6 +10,7 @@ import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { UserModel } from "@/models/User";
 import { CustomerModel } from "@/models/Customer";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type Role = "ADMIN" | "RESELLER";
 type CustomerInput = {
@@ -100,18 +101,6 @@ function orderNumber() {
 function customerName(customer?: CustomerRecord) {
   return [customer?.firstName, customer?.lastName].filter(Boolean).join(" ") || "Cliente";
 }
-function normalizeDocumentId(value: unknown) {
-  return text(value).toUpperCase().replace(/[.\s-]/g, "");
-}
-function hashToken(value: string) {
-  return createHash("sha256").update(value).digest("hex");
-}
-function validSessionToken(hashes: unknown, token: string) {
-  return Boolean(token && Array.isArray(hashes) && hashes.some((value) => value === hashToken(token)));
-}
-function randomCustomerSessionToken() {
-  return randomBytes(32).toString("hex");
-}
 function normalizeRequestedItems(body: Record<string, unknown>): PublicOrderLineInput[] | null {
   let source: unknown = body.items;
   if (!Array.isArray(source)) {
@@ -170,62 +159,49 @@ function serializeOrder(order: PublicOrderRecord, seller?: UserRecord) {
   };
 }
 
-export async function createPublicOrder(request: Request) {
+export async function createPublicOrder(request: Request, buyerId: string) {
   let session: mongoose.ClientSession | null = null;
   let createdOrder: unknown = null;
-  let customerSessionToken = "";
   try {
+    const blocked = await enforceRateLimit(request, "public-order", 8, 60 * 60 * 1000, buyerId);
+    if (blocked) return blocked;
+
     const body = await request.json() as Record<string, unknown>;
     const resellerId = text(body.resellerId);
     const inputItems = normalizeRequestedItems(body);
-    const customerBody = body.customer && typeof body.customer === "object"
-      ? body.customer as Record<string, unknown>
-      : body;
-    const documentId = normalizeDocumentId(customerBody.documentId);
-    const submittedCustomer: CustomerInput = {
-      documentId,
-      firstName: text(customerBody.firstName),
-      lastName: text(customerBody.lastName),
-      phone: text(customerBody.phone),
-      email: text(customerBody.email).toLowerCase(),
-      address: text(customerBody.address),
-    };
-    const submittedToken = text(body.customerSessionToken);
-    const rememberCustomer = body.rememberCustomer === true;
     const customerDataConsent = body.customerDataConsent === true;
-    const notificationsWhatsAppConsent = body.notificationsWhatsAppConsent === true;
-    const notificationsEmailConsent = body.notificationsEmailConsent === true;
+    const address = text(body.address);
     const note = text(body.note).slice(0, 500);
 
     if (!mongoose.isValidObjectId(resellerId) || !inputItems) {
       return errorResponse("El catálogo o los productos seleccionados no son válidos.", 400, "INVALID_PUBLIC_ORDER_REFERENCE");
     }
-    if (!documentId || documentId.length > 40 ||
-      submittedCustomer.firstName.length > 100 || submittedCustomer.lastName.length > 100 ||
-      submittedCustomer.phone.length > 40 || submittedCustomer.email.length > 200 ||
-      submittedCustomer.address.length > 300) {
-      return errorResponse("Revisa la cédula y los datos introducidos.", 400, "INVALID_CUSTOMER_FIELDS");
+    if (resellerId === buyerId) {
+      return errorResponse("No puedes generar un pedido desde tu propia tienda.", 400, "CANNOT_ORDER_OWN_STORE");
     }
-    if (submittedCustomer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedCustomer.email)) {
-      return errorResponse("El correo electrónico no tiene un formato válido.");
+    if (address.length > 300) {
+      return errorResponse("La dirección no puede superar los 300 caracteres.");
     }
     if (!customerDataConsent) {
-      return errorResponse("Debes aceptar el uso de tus datos para gestionar este pedido y facilitar futuras compras.", 400, "CUSTOMER_DATA_CONSENT_REQUIRED");
-    }
-    if (submittedToken && !/^[a-f0-9]{64}$/i.test(submittedToken)) {
-      return errorResponse("La sesión de cliente guardada no es válida. Completa los datos del cliente nuevamente.", 400, "INVALID_CUSTOMER_SESSION");
+      return errorResponse("Debes autorizar que compartamos tus datos de cuenta con esta tienda para gestionar el pedido.", 400, "CUSTOMER_DATA_CONSENT_REQUIRED");
     }
 
     await connectMongoDB();
     session = await mongoose.startSession();
 
     await session.withTransaction(async () => {
-      const seller = await UserModel.findOne({
-        _id: resellerId,
-        role: { $in: ["ADMIN", "RESELLER"] },
-        isActive: true,
-      }).select("_id role").session(session!).lean() as unknown as { _id: mongoose.Types.ObjectId; role: Role } | null;
+      const [buyer, seller] = await Promise.all([
+        UserModel.findOne({ _id: buyerId, isActive: true })
+          .select("_id documentId firstName lastName phone email")
+          .session(session!).exec(),
+        UserModel.findOne({
+          _id: resellerId,
+          role: { $in: ["ADMIN", "RESELLER"] },
+          isActive: true,
+        }).select("_id role").session(session!).exec(),
+      ]);
 
+      if (!buyer) throw new PublicOrderError("Tu cuenta ya no está disponible. Inicia sesión nuevamente.", 401, "BUYER_NOT_AVAILABLE");
       if (!seller) throw new PublicOrderError("Este catálogo ya no está disponible.", 404, "CATALOG_NOT_FOUND");
 
       const productIds = [...new Set(inputItems.map((item) => item.productId))];
@@ -264,7 +240,6 @@ export async function createPublicOrder(request: Request) {
           throw new PublicOrderError("Solo quedan " + variant.stock + " unidades de " + product.title + " (" + variant.label + ").", 409, "INSUFFICIENT_STOCK");
         }
         const unitPrice = fromCents(toCents(effectiveSellingPrice));
-        const lineTotal = fromCents(toCents(unitPrice) * input.quantity);
         return {
           productId: product._id,
           variantId: variant._id,
@@ -274,150 +249,75 @@ export async function createPublicOrder(request: Request) {
           variantSku: variant.sku,
           quantity: input.quantity,
           unitPrice,
-          lineTotal,
+          lineTotal: fromCents(toCents(unitPrice) * input.quantity),
           stockAtRequest: variant.stock,
         };
       });
-      const subtotalCents = normalizedItems.reduce((sum, item) => sum + toCents(item.lineTotal), 0);
-      const subtotal = fromCents(subtotalCents);
 
-      const identity = await CustomerIdentityModel.findOne({
-        documentId,
-        isActive: true,
-      }).session(session!).exec();
-      const registeredUser = await UserModel.findOne({
-        documentId,
-        isActive: true,
-      }).select("_id documentId firstName lastName phone email role")
-        .session(session!).exec() as unknown as {
-          _id: mongoose.Types.ObjectId;
-          documentId: string;
-          firstName: string;
-          lastName: string;
-          phone: string;
-          email: string;
-          role: Role;
-        } | null;
+      const customer: CustomerInput = {
+        documentId: buyer.documentId,
+        firstName: buyer.firstName,
+        lastName: buyer.lastName,
+        phone: buyer.phone,
+        email: buyer.email,
+        address,
+      };
 
-      let resolvedCustomer: CustomerInput;
-      let customerProfileId: mongoose.Types.ObjectId;
-
-      if (identity) {
-        // The database is authoritative for existing customers. The public
-        // client submits only the document ID and optional delivery details.
-        resolvedCustomer = {
-          documentId: identity.documentId,
-          firstName: registeredUser?.firstName ?? identity.firstName,
-          lastName: registeredUser?.lastName ?? identity.lastName,
-          phone: registeredUser?.phone ?? identity.phone,
-          email: text(registeredUser?.email ?? identity.email).toLowerCase(),
-          address: submittedCustomer.address,
-        };
-        customerProfileId = identity._id as mongoose.Types.ObjectId;
-
-        const hasSubmittedValidToken = validSessionToken(identity.sessionTokenHashes, submittedToken);
-        // A public document-ID lookup is not sufficient proof to mint a new
-        // account-conversion credential. Preserve only a token already held by this device.
-        customerSessionToken = rememberCustomer && hasSubmittedValidToken ? submittedToken : "";
-        if (!rememberCustomer && hasSubmittedValidToken) {
-          const usedTokenHash = hashToken(submittedToken);
-          identity.sessionTokenHashes = (identity.sessionTokenHashes ?? [])
-            .filter((value: string) => value !== usedTokenHash);
-        }
-
-        if (submittedCustomer.address) identity.address = submittedCustomer.address;
-        identity.dataProcessingConsent = true;
-        identity.dataProcessingConsentAt = identity.dataProcessingConsentAt ?? new Date();
-        identity.notificationsWhatsAppConsent = notificationsWhatsAppConsent;
-        identity.notificationsEmailConsent = notificationsEmailConsent;
-        await identity.save({ session: session! });
-      } else if (registeredUser) {
-        // Reseller accounts can also place public orders. Link a lightweight
-        // customer identity to the existing account instead of asking them
-        // to re-enter or exposing their protected contact details.
-        resolvedCustomer = {
-          documentId: registeredUser.documentId,
-          firstName: registeredUser.firstName,
-          lastName: registeredUser.lastName,
-          phone: registeredUser.phone,
-          email: registeredUser.email,
-          address: submittedCustomer.address,
-        };
-        customerSessionToken = "";
-        const createdIdentities = await CustomerIdentityModel.create([{
-          ...resolvedCustomer,
-          sessionTokenHashes: [],
-          convertedUserId: registeredUser._id,
-          dataProcessingConsent: true,
-          dataProcessingConsentAt: new Date(),
-          notificationsWhatsAppConsent,
-          notificationsEmailConsent,
-          isActive: true,
-        }], { session: session! });
-        customerProfileId = createdIdentities[0]._id as mongoose.Types.ObjectId;
-      } else {
-        // New customer: only this path requires the full set of personal data.
-        if (!submittedCustomer.firstName || !submittedCustomer.lastName ||
-          !submittedCustomer.phone || !submittedCustomer.email) {
-          throw new PublicOrderError(
-            "Completa nombre, apellido, teléfono y correo electrónico para registrar tus datos.",
-            400,
-            "CUSTOMER_FIELDS_REQUIRED",
-          );
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedCustomer.email)) {
-          throw new PublicOrderError("El correo electrónico no tiene un formato válido.", 400, "INVALID_EMAIL");
-        }
-
-        resolvedCustomer = submittedCustomer;
-        customerSessionToken = rememberCustomer ? randomCustomerSessionToken() : "";
-        const createdIdentities = await CustomerIdentityModel.create([{
-          ...resolvedCustomer,
-          sessionTokenHashes: customerSessionToken ? [hashToken(customerSessionToken)] : [],
-          dataProcessingConsent: true,
-          dataProcessingConsentAt: new Date(),
-          notificationsWhatsAppConsent,
-          notificationsEmailConsent,
-          isActive: true,
-        }], { session: session! });
-        customerProfileId = createdIdentities[0]._id as mongoose.Types.ObjectId;
-      }
-
-      if (!resolvedCustomer.phone || !resolvedCustomer.email ||
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedCustomer.email)) {
-        throw new PublicOrderError(
-          "El perfil encontrado no tiene un teléfono y correo válidos para gestionar el pedido. Contacta al vendedor.",
-          409,
-          "CUSTOMER_PROFILE_INCOMPLETE",
-        );
-      }
-
-      const customer = await CustomerModel.findOne({
+      const customerRecord = await CustomerModel.findOne({
         ownerId: seller._id,
-        documentId,
+        documentId: customer.documentId,
       }).session(session!).exec();
-      if (customer) {
-        customer.firstName = resolvedCustomer.firstName;
-        customer.lastName = resolvedCustomer.lastName;
-        customer.phone = resolvedCustomer.phone;
-        customer.email = resolvedCustomer.email;
-        if (submittedCustomer.address) customer.address = submittedCustomer.address;
-        customer.isActive = true;
-        await customer.save({ session: session! });
+      if (customerRecord) {
+        customerRecord.firstName = customer.firstName;
+        customerRecord.lastName = customer.lastName;
+        customerRecord.phone = customer.phone;
+        customerRecord.email = customer.email;
+        if (address) customerRecord.address = address;
+        customerRecord.dataProcessingConsent = true;
+        customerRecord.dataProcessingConsentAt = customerRecord.dataProcessingConsentAt ?? new Date();
+        customerRecord.isActive = true;
+        await customerRecord.save({ session: session! });
       } else {
         await CustomerModel.create([{
           ownerId: seller._id,
-          ...resolvedCustomer,
+          ...customer,
+          dataProcessingConsent: true,
+          dataProcessingConsentAt: new Date(),
           isActive: true,
         }], { session: session! });
       }
 
+      const identity = await CustomerIdentityModel.findOne({ documentId: buyer.documentId }).session(session!).exec();
+      if (identity) {
+        identity.firstName = buyer.firstName;
+        identity.lastName = buyer.lastName;
+        identity.phone = buyer.phone;
+        identity.email = buyer.email;
+        if (address) identity.address = address;
+        identity.dataProcessingConsent = true;
+        identity.dataProcessingConsentAt = identity.dataProcessingConsentAt ?? new Date();
+        identity.convertedUserId = buyer._id as mongoose.Types.ObjectId;
+        identity.isActive = true;
+        await identity.save({ session: session! });
+      } else {
+        await CustomerIdentityModel.create([{
+          ...customer,
+          sessionTokenHashes: [],
+          convertedUserId: buyer._id,
+          dataProcessingConsent: true,
+          dataProcessingConsentAt: new Date(),
+          notificationsWhatsAppConsent: false,
+          notificationsEmailConsent: false,
+          isActive: true,
+        }], { session: session! });
+      }
+
+      const subtotal = fromCents(normalizedItems.reduce((sum, item) => sum + toCents(item.lineTotal), 0));
       const created = await PublicOrderModel.create([{
         orderNumber: orderNumber(),
         resellerId: seller._id,
         resellerRole: seller.role,
-        customer: resolvedCustomer,
-        customerProfileId,
+        customer,
         items: normalizedItems,
         subtotal,
         note,
@@ -428,20 +328,18 @@ export async function createPublicOrder(request: Request) {
     });
 
     if (!createdOrder) return errorResponse("No pudimos registrar el pedido.", 500, "ORDER_NOT_CREATED");
-    const result = {
+    return NextResponse.json({
       ok: true,
       order: serializeOrder((createdOrder as { toObject(): unknown }).toObject() as unknown as PublicOrderRecord),
-      customerSessionToken: rememberCustomer ? customerSessionToken : "",
       message: "Solicitud registrada. El vendedor confirmará existencias, precio y entrega antes de crear la venta.",
-    };
-    return NextResponse.json(result, {
+    }, {
       status: 201,
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
     if (error instanceof PublicOrderError) return errorResponse(error.message, error.status, error.code);
     if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
-      return errorResponse("Ya existe un registro con estos datos. Revisa la cédula e inténtalo de nuevo.", 409, "DUPLICATE_CUSTOMER_OR_ORDER");
+      return errorResponse("Ya existe un registro con estos datos. Revisa la información e inténtalo de nuevo.", 409, "DUPLICATE_CUSTOMER_OR_ORDER");
     }
     console.error("[PUBLIC_ORDER_CREATE]", error);
     return errorResponse("No pudimos registrar el pedido. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
