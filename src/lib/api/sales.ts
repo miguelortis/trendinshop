@@ -45,6 +45,16 @@ type CustomerRecord = {
   address?: string;
 };
 
+type SharedCartSource = {
+  items: {
+    variantId: mongoose.Types.ObjectId | string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+  isActive: boolean;
+  save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
+};
+
 type PublicOrderSource = {
   _id: mongoose.Types.ObjectId;
   resellerId: mongoose.Types.ObjectId;
@@ -485,7 +495,7 @@ export async function createSale(request: Request, userId: string, userRole: str
 
     await transactionSession.withTransaction(async () => {
       let sourceOrder: PublicOrderSource | null = null;
-      let sharedCart: Awaited<ReturnType<typeof PublicCartShareModel.findOne>> | null = null;
+      let sharedCart: SharedCartSource | null = null;
       let effectiveLines = lines ?? [];
       const sourceOrderPriceByVariant = new Map<string, number>();
       const sharedCartPriceByVariant = new Map<string, number>();
@@ -496,7 +506,7 @@ export async function createSale(request: Request, userId: string, userRole: str
           resellerId: userId,
           isActive: true,
           expiresAt: { $gt: new Date() },
-        }).session(transactionSession).exec();
+        }).session(transactionSession).exec() as unknown as SharedCartSource | null;
         if (!sharedCart) {
           fail("Este carrito ya se utilizó, caducó o no pertenece a tu tienda.", 404, "SHARED_CART_NOT_AVAILABLE");
         }

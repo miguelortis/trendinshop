@@ -46,7 +46,7 @@ export async function bootstrapAdmin(request: Request) {
   }
 
   let session: mongoose.ClientSession | null = null;
-  let promoted: { _id: mongoose.Types.ObjectId } | null = null;
+  const activation: { promoted?: { _id: mongoose.Types.ObjectId } } = {};
 
   try {
     await connectMongoDB();
@@ -66,21 +66,22 @@ export async function bootstrapAdmin(request: Request) {
         claimedAt: new Date(),
       }], { session: session! });
 
-      promoted = await UserModel.findOneAndUpdate(
+      activation.promoted = await UserModel.findOneAndUpdate(
         { _id: user.id, role: "RESELLER", isActive: true },
         { $set: { role: "ADMIN" } },
         { new: true, session: session! },
       ) as unknown as { _id: mongoose.Types.ObjectId } | null;
 
-      if (!promoted) throw new Error("USER_NOT_FOUND");
+      if (!activation.promoted) throw new Error("USER_NOT_FOUND");
     });
 
-    if (!promoted) {
+    const promotedUser = activation.promoted;
+    if (!promotedUser) {
       return errorResponse("No pudimos actualizar tu cuenta.", 404, "USER_NOT_FOUND");
     }
 
     const token = await createSessionToken(
-      { id: promoted._id.toString(), role: "ADMIN" },
+      { id: promotedUser._id.toString(), role: "ADMIN" },
       true,
     );
 

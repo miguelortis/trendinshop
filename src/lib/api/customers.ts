@@ -88,7 +88,15 @@ export async function lookupCustomerByDocument(request: Request, userId: string)
       ownerId: userId,
       documentId,
       isActive: true,
-    }).select("documentId firstName lastName phone email address").lean();
+    }).select("documentId firstName lastName phone email address").lean() as unknown as {
+      _id: mongoose.Types.ObjectId;
+      documentId: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email?: string;
+      address?: string;
+    } | null;
 
     // A profile that was converted to an account is the source of truth for
     // names and contact details, but only within a seller directory that
