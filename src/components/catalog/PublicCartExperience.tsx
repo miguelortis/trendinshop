@@ -127,7 +127,18 @@ export function PublicCartExperience({
   const [cartMessage, setCartMessage] = useState("");
   const [shareMessage, setShareMessage] = useState("");
   const [sharedUrl, setSharedUrl] = useState("");
-  const [customer, setCustomer] = useState<CustomerForm>(blankCustomer);
+  const [customer, setCustomer] = useState<CustomerForm>(() =>
+    viewer && viewer.id !== resellerId
+      ? {
+          ...blankCustomer,
+          documentId: viewer.documentId,
+          firstName: viewer.firstName,
+          lastName: viewer.lastName,
+          phone: viewer.phone,
+          email: viewer.email,
+        }
+      : blankCustomer,
+  );
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupState, setLookupState] = useState<"idle" | "checking" | "found" | "not-found" | "error">("idle");
   const [lookedUpDocumentId, setLookedUpDocumentId] = useState("");
@@ -164,8 +175,6 @@ export function PublicCartExperience({
 
   useEffect(() => {
     let active = true;
-    setLoadingCart(true);
-    setCartError("");
 
     async function load() {
       try {
@@ -192,21 +201,18 @@ export function PublicCartExperience({
       }
     }
 
-    void load();
-    return () => { active = false; };
-  }, [resellerId, shareToken, refreshCart]);
+    const startLoading = window.setTimeout(() => {
+      if (!active) return;
+      setLoadingCart(true);
+      setCartError("");
+      void load();
+    }, 0);
 
-  useEffect(() => {
-    if (!viewer || viewer.id === resellerId) return;
-    setCustomer({
-      ...blankCustomer,
-      documentId: viewer.documentId,
-      firstName: viewer.firstName,
-      lastName: viewer.lastName,
-      phone: viewer.phone,
-      email: viewer.email,
-    });
-  }, [viewer, resellerId]);
+    return () => {
+      active = false;
+      window.clearTimeout(startLoading);
+    };
+  }, [resellerId, shareToken, refreshCart]);
 
   const lookupCustomer = useCallback(async (documentId: string) => {
     if (!documentId || !isSellerView) return;
@@ -241,12 +247,7 @@ export function PublicCartExperience({
   useEffect(() => {
     if (!isSellerView) return;
     const documentId = normalizeDocumentId(customer.documentId);
-    if (!documentId) {
-      setLookupState("idle");
-      setLookedUpDocumentId("");
-      setLookupMessage("");
-      return;
-    }
+    if (!documentId) return;
     if (lookupState === "checking") return;
     if (lookedUpDocumentId === documentId &&
       (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) return;

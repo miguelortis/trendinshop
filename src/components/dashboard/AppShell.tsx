@@ -56,7 +56,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const displayName = user ? user.firstName + " " + user.lastName : "TrendinShop";
   const roleLabel = user?.role === "ADMIN" ? "Administrador" : "Revendedor";
 
-  useEffect(() => setMobileOpen(false), [pathname]);
+  useEffect(() => {
+    const closeMenu = window.setTimeout(() => setMobileOpen(false), 0);
+    return () => window.clearTimeout(closeMenu);
+  }, [pathname]);
 
   async function handleLogout() {
     setLoggingOut(true);

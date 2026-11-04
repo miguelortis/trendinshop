@@ -28,7 +28,7 @@ export function getPostLoginDestination(
     if (destination.origin !== INTERNAL_ORIGIN) return DASHBOARD;
 
     const pathname = destination.pathname;
-    const sharedCartPath = /^[/]tienda[/][a-z0-9_-]+[/]carrito/?$/i.test(pathname);
+    const sharedCartPath = /^[/]tienda[/][a-z0-9_-]+[/]carrito[/]?$/i.test(pathname);
     const shareToken = destination.searchParams.get("share") ?? "";
     if (sharedCartPath && /^[a-f0-9]{64}$/i.test(shareToken)) {
       return pathname + destination.search + destination.hash;

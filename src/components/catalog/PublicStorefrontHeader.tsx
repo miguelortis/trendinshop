@@ -17,7 +17,7 @@ export function PublicStorefrontHeader({ resellerId, storeSlug, storeName, logoU
   const refresh = useCallback(() => setCount(publicCartCount(readPublicCart(resellerId))), [resellerId]);
 
   useEffect(() => {
-    refresh();
+    const initialRefresh = window.setTimeout(refresh, 0);
     const handleUpdate = (event: Event) => {
       const detail = (event as CustomEvent<{ resellerId?: string }>).detail;
       if (!detail?.resellerId || detail.resellerId === resellerId) refresh();
@@ -25,6 +25,7 @@ export function PublicStorefrontHeader({ resellerId, storeSlug, storeName, logoU
     window.addEventListener("storage", refresh);
     window.addEventListener("trendinshop:public-cart-updated", handleUpdate);
     return () => {
+      window.clearTimeout(initialRefresh);
       window.removeEventListener("storage", refresh);
       window.removeEventListener("trendinshop:public-cart-updated", handleUpdate);
     };
