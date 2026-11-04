@@ -109,38 +109,47 @@ export default function EditProductPage() {
     const details = productQuery.data;
     if (!details?.product || hydrated) return;
 
-    const product = details.product;
-    setTitle(product.title);
-    setSku(product.sku);
-    setCategoryId(
-      typeof product.categoryId === "object"
-        ? product.categoryId._id
-        : product.categoryId,
-    );
-    setDescription(product.description ?? "");
-    setImages(product.images ?? []);
-    setPurchasePrice(String(product.purchasePrice));
-    setWholesalePrice(String(product.wholesalePrice));
+    let active = true;
+    const hydrateTimer = window.setTimeout(() => {
+      if (!active) return;
+      const product = details.product;
+      setTitle(product.title);
+      setSku(product.sku);
+      setCategoryId(
+        typeof product.categoryId === "object"
+          ? product.categoryId._id
+          : product.categoryId,
+      );
+      setDescription(product.description ?? "");
+      setImages(product.images ?? []);
+      setPurchasePrice(String(product.purchasePrice));
+      setWholesalePrice(String(product.wholesalePrice));
 
-    setVariants(
-      details.variants.map((variant) => ({
-        _id: variant._id,
-        label: variant.label,
-        sku: variant.sku,
-        purchasePrice:
-          variant.purchasePrice === null ? "" : String(variant.purchasePrice),
-        wholesalePrice:
-          variant.wholesalePrice === null ? "" : String(variant.wholesalePrice),
-        stock: String(variant.stock),
-        lowStockThreshold: String(variant.lowStockThreshold),
-        options: variant.options?.length
-          ? variant.options.map((option) => ({ ...option }))
-          : [{ name: "", value: "" }],
-      })),
-    );
-    setStock(String(details.variants[0]?.stock ?? 0));
-    setLowStockThreshold(String(details.variants[0]?.lowStockThreshold ?? 3));
-    setHydrated(true);
+      setVariants(
+        details.variants.map((variant) => ({
+          _id: variant._id,
+          label: variant.label,
+          sku: variant.sku,
+          purchasePrice:
+            variant.purchasePrice === null ? "" : String(variant.purchasePrice),
+          wholesalePrice:
+            variant.wholesalePrice === null ? "" : String(variant.wholesalePrice),
+          stock: String(variant.stock),
+          lowStockThreshold: String(variant.lowStockThreshold),
+          options: variant.options?.length
+            ? variant.options.map((option) => ({ ...option }))
+            : [{ name: "", value: "" }],
+        })),
+      );
+      setStock(String(details.variants[0]?.stock ?? 0));
+      setLowStockThreshold(String(details.variants[0]?.lowStockThreshold ?? 3));
+      setHydrated(true);
+    }, 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(hydrateTimer);
+    };
   }, [productQuery.data, hydrated]);
 
   const categories = useQuery({

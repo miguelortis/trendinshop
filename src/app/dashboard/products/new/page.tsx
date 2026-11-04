@@ -79,12 +79,6 @@ export default function NewProductPage() {
     enabled: user?.role === "ADMIN",
   });
 
-  useEffect(() => {
-    if (!skuEdited) {
-      setSku(makeSku(title));
-    }
-  }, [title, skuEdited]);
-
   const priceCalculation = useMemo(() => {
     const cost = Number(purchasePrice);
     const target = Number(pricingTarget);
@@ -306,7 +300,11 @@ export default function NewProductPage() {
                 <span>Nombre del producto</span>
                 <input
                   value={title}
-                  onChange={(event) => setTitle(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setTitle(value);
+                    if (!skuEdited) setSku(makeSku(value));
+                  }}
                   placeholder="Ej. Vaso Térmico Premium"
                   required
                 />

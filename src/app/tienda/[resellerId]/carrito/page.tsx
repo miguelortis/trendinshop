@@ -1,6 +1,8 @@
-import mongoose from "mongoose";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 import { UserModel } from "@/models/User";
 import { PublicCartExperience } from "@/components/catalog/PublicCartExperience";
 
@@ -10,6 +12,7 @@ type PageProps = {
   params: Promise<{ resellerId: string }>;
   searchParams: Promise<{ share?: string }>;
 };
+
 type SellerRecord = {
   _id: mongoose.Types.ObjectId;
   firstName: string;
@@ -20,6 +23,53 @@ type SellerRecord = {
   storeSlug?: string;
   storeLogoUrl?: string;
 };
+
+type ViewerRecord = {
+  id: string;
+  role: "ADMIN" | "RESELLER";
+  documentId: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+};
+
+async function getViewer() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  try {
+    const payload = await verifySessionToken(token);
+    await connectMongoDB();
+    const user = await UserModel.findOne({ _id: payload.sub, isActive: true })
+      .select("_id role documentId firstName lastName phone email sessionInvalidBefore")
+      .lean() as unknown as {
+        _id: mongoose.Types.ObjectId;
+        role: "ADMIN" | "RESELLER";
+        documentId: string;
+        firstName: string;
+        lastName: string;
+        phone: string;
+        email: string;
+        sessionInvalidBefore: Date | null;
+      } | null;
+
+    if (!user) return null;
+    if (user.sessionInvalidBefore && Number(payload.iat ?? 0) < Math.floor(user.sessionInvalidBefore.getTime() / 1000)) return null;
+    return {
+      id: String(user._id),
+      role: user.role,
+      documentId: user.documentId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      email: user.email,
+    } satisfies ViewerRecord;
+  } catch {
+    return null;
+  }
+}
 
 export default async function PublicCartPage({ params, searchParams }: PageProps) {
   const { resellerId } = await params;
@@ -40,6 +90,8 @@ export default async function PublicCartPage({ params, searchParams }: PageProps
 
   if (!seller) notFound();
 
+  const viewer = await getViewer();
+
   return (
     <PublicCartExperience
       resellerId={String(seller._id)}
@@ -48,6 +100,7 @@ export default async function PublicCartPage({ params, searchParams }: PageProps
       sellerPhone={seller.storeWhatsApp?.trim() || seller.phone || ""}
       logoUrl={seller.storeLogoUrl ?? ""}
       shareToken={query.share ?? ""}
+      viewer={viewer}
     />
   );
 }

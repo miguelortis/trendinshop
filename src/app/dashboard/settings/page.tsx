@@ -63,7 +63,9 @@ export default function SettingsPage() {
     if (!user?.id) return;
     let active = true;
 
-    setLoadingProfile(true);
+    const loadingTimer = window.setTimeout(() => {
+      if (active) setLoadingProfile(true);
+    }, 0);
     api.get<ProfileResponse>("/profile")
       .then(({ data }) => {
         if (!active) return;
@@ -81,7 +83,10 @@ export default function SettingsPage() {
         if (active) setLoadingProfile(false);
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      window.clearTimeout(loadingTimer);
+    };
   }, [user?.id]);
 
   useEffect(() => {

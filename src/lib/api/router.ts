@@ -3,6 +3,8 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  requestPasswordReset,
+  resetPassword,
 } from "@/lib/api/auth";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
@@ -14,13 +16,13 @@ import {
   updateResellerCatalogItem,
 } from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
-import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
+import { createCustomer, listCustomers, lookupCustomerByDocument, removeCustomer, updateCustomer } from "@/lib/api/customers";
 import { cancelSale, createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
 import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
-import { lookupPublicCustomer } from "@/lib/api/public-customers";
+
 import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment, reviewSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
@@ -56,23 +58,18 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "auth") {
     if (method === "POST" && action === "register") return registerUser(request);
     if (method === "POST" && action === "login") return loginUser(request);
+    if (method === "POST" && action === "password-reset-request") return requestPasswordReset(request);
+    if (method === "POST" && action === "password-reset") return resetPassword(request);
     if (method === "GET" && action === "me") return getCurrentUser(request);
     if (method === "POST" && action === "logout") return logoutUser();
   }
 
-  // Los catálogos públicos no requieren sesión para crear un pedido, validar un carrito o compartirlo.
-  if (resource === "public-orders" && method === "POST" && !action) {
-    return createPublicOrder(request);
-  }
+  // La validación y el intercambio de carritos son públicos; registrar un pedido requiere cuenta.
   if (resource === "public-carts") {
     if (method === "POST" && action === "validate") return validatePublicCart(request);
     if (method === "POST" && action === "share") return createPublicCartShare(request);
     if (method === "GET" && action === "share") return getPublicCartShare(request);
   }
-  if (resource === "public-customers" && method === "POST" && action === "lookup") {
-    return lookupPublicCustomer(request);
-  }
-
   const user = await getAuthenticatedUser(request);
   if (!user) return unauthorized();
 
@@ -117,6 +114,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "public-orders") {
+    if (method === "POST" && !action) return createPublicOrder(request, user.id);
     if (method === "GET" && !action) return listPublicOrders(user.id, user.role);
     if (method === "PATCH" && action) return updatePublicOrder(request, action, user.id, user.role);
   }
@@ -141,6 +139,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "customers") {
+    if (method === "POST" && action === "lookup") return lookupCustomerByDocument(request, user.id);
     if (method === "GET") return listCustomers(user.id);
     if (method === "POST" && !action) return createCustomer(request, user.id);
     if ((method === "PUT" || method === "PATCH") && action) {

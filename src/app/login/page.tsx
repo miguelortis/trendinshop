@@ -100,7 +100,7 @@ export default function LoginPage() {
               <label className="field">
                 <div className="field-label-row">
                   <span>Contraseña</span>
-                  <button type="button" className="field-link">¿Olvidaste tu contraseña?</button>
+                  <Link href="/forgot-password" className="field-link">¿Olvidaste tu contraseña?</Link>
                 </div>
                 <div className="password-input">
                   <input

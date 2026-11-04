@@ -3608,3 +3608,30 @@ button, input, select, textarea { font: inherit; }
   .receivables-filters .secondary-button { grid-column: 1 / -1; width: 100%; min-height: 44px; justify-content: center; }
   .sale-row-item-detail { padding: 8px 9px; }
 }
+
+
+/* Legal pages */
+.legal-shell { min-height: 100vh; padding: 24px 20px 64px; background: #f8fafc; color: #101828; }
+.legal-container { width: min(900px, 100%); margin: 0 auto; }
+.legal-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 0 24px; color: #475467; font-size: 14px; }
+.legal-brand { color: #101828; font-size: 20px; font-weight: 800; letter-spacing: -.04em; }
+.legal-card { padding: clamp(22px, 5vw, 48px); border: 1px solid #e4e7ec; border-radius: 22px; background: #fff; box-shadow: 0 16px 40px rgba(16, 24, 40, .05); }
+.legal-kicker { color: #6941c6; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.legal-card h1 { margin: 10px 0 8px; font-size: clamp(30px, 5vw, 44px); line-height: 1.1; letter-spacing: -.045em; }
+.legal-updated { margin: 0 0 28px; color: #667085; font-size: 13px; }
+.legal-card section { padding: 20px 0; border-top: 1px solid #eaecf0; }
+.legal-card h2 { margin: 0 0 10px; font-size: 18px; letter-spacing: -.02em; }
+.legal-card p, .legal-card li { color: #475467; font-size: 14px; line-height: 1.75; }
+.legal-card p { margin: 9px 0; }
+.legal-card ul { padding-left: 22px; }
+.legal-operator { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid #fdb022; border-radius: 12px; background: #fffaeb; color: #7a2e0e; font-size: 14px; }
+.legal-operator small { margin-top: 6px; line-height: 1.5; }
+.legal-footnote { padding-top: 18px; border-top: 1px solid #eaecf0; font-size: 12px !important; }
+.register-check a { color: #6941c6; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 560px) { .legal-shell { padding: 12px 12px 32px; } .legal-nav { padding: 10px 4px 18px; } .legal-card { border-radius: 16px; } }
+
+
+/* Authentication feedback and recovery links */
+.auth-success { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #abefc6; border-radius: 10px; background: #ecfdf3; color: #067647; font-size: 13px; line-height: 1.5; }
+.auth-back-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; color: #667085; font-size: 13px; font-weight: 600; }
+.auth-back-link:hover { color: #6941c6; }

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CustomerModel } from "@/models/Customer";
+import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { UserModel } from "@/models/User";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type CustomerInput = {
   documentId: string;
@@ -67,6 +70,93 @@ function serializeCustomer<T extends { _id: unknown }>(customer: T) {
     createdAt: value.createdAt instanceof Date ? value.createdAt : undefined,
     updatedAt: value.updatedAt instanceof Date ? value.updatedAt : undefined,
   };
+}
+
+export async function lookupCustomerByDocument(request: Request, userId: string) {
+  const blocked = await enforceRateLimit(request, "customer-lookup", 20, 15 * 60 * 1000, userId);
+  if (blocked) return blocked;
+
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const documentId = normalizeDocumentId(body.documentId);
+    if (!documentId || documentId.length > 40) {
+      return errorResponse("Introduce una cédula válida.", 400, "INVALID_DOCUMENT_ID");
+    }
+
+    await connectMongoDB();
+    const customer = await CustomerModel.findOne({
+      ownerId: userId,
+      documentId,
+      isActive: true,
+    }).select("documentId firstName lastName phone email address").lean() as unknown as {
+      _id: mongoose.Types.ObjectId;
+      documentId: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email?: string;
+      address?: string;
+    } | null;
+
+    // A profile that was converted to an account is the source of truth for
+    // names and contact details, but only within a seller directory that
+    // already contains this customer. This never exposes a global lookup.
+    let currentCustomer = customer;
+    if (customer) {
+      const identity = await CustomerIdentityModel.findOne({
+        documentId,
+        isActive: true,
+        convertedUserId: { $ne: null },
+      }).select("convertedUserId").lean() as unknown as { convertedUserId?: mongoose.Types.ObjectId } | null;
+      if (identity?.convertedUserId) {
+        const account = await UserModel.findOne({
+          _id: identity.convertedUserId,
+          documentId,
+          isActive: true,
+        }).select("documentId firstName lastName phone email").lean() as unknown as {
+          documentId: string;
+          firstName: string;
+          lastName: string;
+          phone: string;
+          email: string;
+        } | null;
+        if (account) {
+          await CustomerModel.updateOne(
+            { _id: customer._id, ownerId: userId },
+            { $set: {
+              firstName: account.firstName,
+              lastName: account.lastName,
+              phone: account.phone,
+              email: account.email,
+            } },
+          );
+          currentCustomer = {
+            ...customer,
+            firstName: account.firstName,
+            lastName: account.lastName,
+            phone: account.phone,
+            email: account.email,
+          };
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      exists: Boolean(currentCustomer),
+      customer: currentCustomer ? {
+        documentId: currentCustomer.documentId,
+        firstName: currentCustomer.firstName,
+        lastName: currentCustomer.lastName,
+        phone: currentCustomer.phone,
+        email: currentCustomer.email ?? "",
+        address: currentCustomer.address ?? "",
+      } : null,
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  } catch (error) {
+    console.error("[CUSTOMER_LOOKUP]", error);
+    return errorResponse("No pudimos consultar el cliente. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
+  }
 }
 
 export async function listCustomers(userId: string) {

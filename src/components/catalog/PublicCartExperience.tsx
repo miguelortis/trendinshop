@@ -1,8 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, CheckCircle2, ClipboardList, LoaderCircle, Minus, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  LoaderCircle,
+  Minus,
+  Plus,
+  Share2,
+  ShoppingBag,
+  Trash2,
+} from "lucide-react";
 import { api } from "@/lib/api/client";
 import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 import {
@@ -12,7 +22,15 @@ import {
   writePublicCart,
 } from "@/lib/public-cart-client";
 
-const CUSTOMER_SESSION_KEY = "trendinshop:customer-session";
+type Viewer = {
+  id: string;
+  role: "ADMIN" | "RESELLER";
+  documentId: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+};
 
 type Props = {
   resellerId: string;
@@ -21,7 +39,9 @@ type Props = {
   sellerPhone: string;
   logoUrl: string;
   shareToken: string;
+  viewer: Viewer | null;
 };
+
 type CartResponse = {
   ok: true;
   token?: string;
@@ -30,6 +50,7 @@ type CartResponse = {
   subtotal: number;
   expiresAt?: string;
 };
+
 type CustomerForm = {
   documentId: string;
   firstName: string;
@@ -39,20 +60,26 @@ type CustomerForm = {
   address: string;
   note: string;
 };
+
 type CustomerLookupResponse = {
   ok: true;
   exists: boolean;
-  customer?: Pick<CustomerForm, "firstName" | "lastName">;
-  message?: string;
+  customer: Omit<CustomerForm, "note"> | null;
 };
+
 type OrderResponse = {
   ok: true;
   order: { orderNumber: string; subtotal: number };
-  customerSessionToken: string;
   message: string;
 };
+
+type SaleResponse = {
+  ok: true;
+  sale: { saleNumber: string; total: number };
+  message: string;
+};
+
 type ErrorShape = { response?: { data?: { message?: string } } };
-type StoredCustomerSession = { documentId: string; token: string };
 
 const blankCustomer: CustomerForm = {
   documentId: "",
@@ -67,20 +94,32 @@ const blankCustomer: CustomerForm = {
 function messageFrom(error: unknown, fallback: string) {
   return (error as ErrorShape)?.response?.data?.message ?? fallback;
 }
+
 function money(value: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD" }).format(value);
 }
+
 function normalizeDocumentId(value: string) {
   return value.trim().toUpperCase().replace(/[.\s-]/g, "");
 }
+
 function draft(items: PublicCartViewItem[]): PublicCartDraftItem[] {
   return items.map(({ productId, variantId, quantity }) => ({ productId, variantId, quantity }));
 }
+
 function totalQuantity(items: PublicCartViewItem[]) {
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
-export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerPhone, logoUrl, shareToken }: Props) {
+export function PublicCartExperience({
+  resellerId,
+  storeSlug,
+  storeName,
+  sellerPhone,
+  logoUrl,
+  shareToken,
+  viewer,
+}: Props) {
   const [items, setItems] = useState<PublicCartViewItem[]>([]);
   const [loadingCart, setLoadingCart] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -88,30 +127,36 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   const [cartMessage, setCartMessage] = useState("");
   const [shareMessage, setShareMessage] = useState("");
   const [sharedUrl, setSharedUrl] = useState("");
-  const [customer, setCustomer] = useState<CustomerForm>(blankCustomer);
-  const [customerToken, setCustomerToken] = useState("");
-  const [storedCustomerSession, setStoredCustomerSession] = useState<StoredCustomerSession | null>(null);
-  const [knownCustomer, setKnownCustomer] = useState(false);
+  const [customer, setCustomer] = useState<CustomerForm>(() =>
+    viewer && viewer.id !== resellerId
+      ? {
+          ...blankCustomer,
+          documentId: viewer.documentId,
+          firstName: viewer.firstName,
+          lastName: viewer.lastName,
+          phone: viewer.phone,
+          email: viewer.email,
+        }
+      : blankCustomer,
+  );
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupState, setLookupState] = useState<"idle" | "checking" | "found" | "not-found" | "error">("idle");
   const [lookedUpDocumentId, setLookedUpDocumentId] = useState("");
-  const [rememberData, setRememberData] = useState(!shareToken);
-  const [acceptCustomerData, setAcceptCustomerData] = useState(false);
-  const [notificationsWhatsAppConsent, setNotificationsWhatsAppConsent] = useState(false);
-  const [notificationsEmailConsent, setNotificationsEmailConsent] = useState(false);
   const [lookupMessage, setLookupMessage] = useState("");
+  const [acceptCustomerData, setAcceptCustomerData] = useState(false);
   const [orderError, setOrderError] = useState("");
-  const [success, setSuccess] = useState<{ orderNumber: string; subtotal: number } | null>(null);
+  const [success, setSuccess] = useState<{
+    kind: "sale" | "order";
+    reference: string;
+    total: number;
+  } | null>(null);
 
-  const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + item.lineTotal, 0),
-    [items],
-  );
+  const isSellerView = Boolean(viewer && viewer.id === resellerId && shareToken);
+  const isBuyerView = Boolean(viewer && viewer.id !== resellerId);
+  const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const hasUnavailable = items.some((item) => !item.available || item.stock < item.quantity);
   const lookupComplete = (lookupState === "found" || lookupState === "not-found") &&
     lookedUpDocumentId === normalizeDocumentId(customer.documentId);
-  const canSubmit = items.length > 0 && !hasUnavailable && !loadingCart && !busy &&
-    !lookupLoading && lookupComplete && !success;
 
   const refreshCart = useCallback(async (cartItems: PublicCartDraftItem[]) => {
     if (!cartItems.length) {
@@ -130,8 +175,6 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
 
   useEffect(() => {
     let active = true;
-    setLoadingCart(true);
-    setCartError("");
 
     async function load() {
       try {
@@ -143,7 +186,6 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           if (!active) return;
           setItems(response.data.items);
           writePublicCart(resellerId, draft(response.data.items));
-          setRememberData(false);
         } else {
           const current = readPublicCart(resellerId);
           if (current.length) {
@@ -159,68 +201,62 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       }
     }
 
-    void load();
-    return () => { active = false; };
+    const startLoading = window.setTimeout(() => {
+      if (!active) return;
+      setLoadingCart(true);
+      setCartError("");
+      void load();
+    }, 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(startLoading);
+    };
   }, [resellerId, shareToken, refreshCart]);
 
   const lookupCustomer = useCallback(async (documentId: string) => {
-    if (!documentId) return;
+    if (!documentId || !isSellerView) return;
     setLookupLoading(true);
     setLookupState("checking");
     setLookupMessage("");
     try {
-      const response = await api.post<CustomerLookupResponse>("/public-customers/lookup", { documentId });
+      const response = await api.post<CustomerLookupResponse>("/customers/lookup", { documentId });
       setLookedUpDocumentId(documentId);
-
       if (response.data.exists && response.data.customer) {
         setCustomer({
           ...blankCustomer,
+          ...response.data.customer,
           documentId,
-          firstName: response.data.customer.firstName,
-          lastName: response.data.customer.lastName,
         });
-        setKnownCustomer(true);
-        const savedToken = storedCustomerSession &&
-          normalizeDocumentId(storedCustomerSession.documentId) === documentId
-          ? storedCustomerSession.token
-          : "";
-        setCustomerToken(savedToken);
-        setRememberData(Boolean(savedToken));
         setLookupState("found");
-        setLookupMessage(response.data.message ?? "Encontramos un registro. Verifica que el nombre y apellido sean correctos.");
+        setLookupMessage("Cliente encontrado en tu directorio. Revisa y actualiza sus datos si es necesario.");
       } else {
-        setCustomer({ ...blankCustomer, documentId });
-        setKnownCustomer(false);
-        setCustomerToken("");
-        setRememberData(false);
+        setCustomer((current) => ({ ...blankCustomer, documentId: current.documentId }));
         setLookupState("not-found");
-        setLookupMessage(response.data.message ?? "No encontramos un registro con esa cédula. Completa tus datos para continuar.");
+        setLookupMessage("No encontramos este cliente en tu directorio. Completa sus datos para guardarlos con la venta.");
       }
-    } catch {
-      setKnownCustomer(false);
-      setCustomerToken("");
+    } catch (error) {
       setLookupState("error");
       setLookedUpDocumentId(documentId);
-      setLookupMessage("No pudimos validar la cédula. Revisa tu conexión e inténtalo de nuevo.");
+      setLookupMessage(messageFrom(error, "No pudimos consultar tu directorio de clientes."));
     } finally {
       setLookupLoading(false);
     }
-  }, [storedCustomerSession]);
+  }, [isSellerView]);
 
   useEffect(() => {
-    setRememberData(false);
-    try {
-      const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as StoredCustomerSession;
-      if (!saved.documentId || !saved.token) return;
-      // Se conserva el token en memoria, pero no se muestra el perfil hasta que el comprador
-      // escriba su cédula y la coincidencia se compruebe expresamente.
-      setStoredCustomerSession(saved);
-    } catch {
-      // Si el almacenamiento del navegador no se puede leer, el cliente puede completar el formulario.
-    }
-  }, [shareToken]);
+    if (!isSellerView) return;
+    const documentId = normalizeDocumentId(customer.documentId);
+    if (!documentId) return;
+    if (lookupState === "checking") return;
+    if (lookedUpDocumentId === documentId &&
+      (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) return;
+
+    const timeout = window.setTimeout(() => {
+      void lookupCustomer(documentId);
+    }, 650);
+    return () => window.clearTimeout(timeout);
+  }, [customer.documentId, isSellerView, lookupCustomer, lookedUpDocumentId, lookupState]);
 
   function changeQuantity(variantId: string, nextQuantity: number) {
     const existing = items.find((item) => item.variantId === variantId);
@@ -230,30 +266,25 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       return;
     }
     const bounded = Math.min(100, existing.stock || 100, nextQuantity);
-    const next = items.map((item) => item.variantId === variantId ? { ...item, quantity: bounded, lineTotal: item.unitPrice * bounded, available: item.stock >= bounded } : item);
+    const next = items.map((item) => item.variantId === variantId ? { ...item, quantity: bounded, lineTotal: item.unitPrice * bounded } : item);
     setItems(next);
     writePublicCart(resellerId, draft(next));
-    setCartMessage("");
-    setShareMessage("");
-    setSharedUrl("");
   }
 
   function removeItem(variantId: string) {
     const next = items.filter((item) => item.variantId !== variantId);
     setItems(next);
     writePublicCart(resellerId, draft(next));
-    setCartMessage("");
-    setShareMessage("");
-    setSharedUrl("");
   }
 
   async function updatePrices() {
     setCartError("");
     setCartMessage("");
+    if (!items.length) return;
     setBusy(true);
     try {
       await refreshCart(draft(items));
-      setCartMessage("Precios y disponibilidad actualizados.");
+      setCartMessage("Precios y existencias actualizados.");
     } catch (error) {
       setCartError(messageFrom(error, "No pudimos actualizar el carrito."));
     } finally {
@@ -284,12 +315,12 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       writePublicCart(resellerId, draft(response.data.items));
       try {
         await navigator.clipboard.writeText(link);
-        setShareMessage("Enlace copiado. Cualquier persona con el enlace podrá revisar el carrito; caduca en 30 días.");
+        setShareMessage("Enlace copiado. Envíalo al vendedor para que complete los datos y registre la compra.");
       } catch {
-        setShareMessage("Enlace listo. Cópialo desde el campo de abajo para enviarlo al cliente; caduca en 30 días.");
+        setShareMessage("Enlace listo. Cópialo desde el campo de abajo para enviarlo al vendedor.");
       }
     } catch (error) {
-      setCartError(messageFrom(error, "No pudimos compartir el carrito. Comprueba los permisos del navegador para copiar enlaces."));
+      setCartError(messageFrom(error, "No pudimos compartir el carrito. Inténtalo de nuevo."));
     } finally {
       setBusy(false);
     }
@@ -298,58 +329,80 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
   function updateCustomer<K extends keyof CustomerForm>(key: K, value: CustomerForm[K]) {
     setCustomer((current) => ({ ...current, [key]: value }));
     setOrderError("");
-  }
-
-  useEffect(() => {
-    const documentId = normalizeDocumentId(customer.documentId);
-
-    if (!documentId) {
-      setLookupLoading(false);
+    if (key === "documentId") {
+      setAcceptCustomerData(false);
       setLookupState("idle");
       setLookedUpDocumentId("");
       setLookupMessage("");
-      setKnownCustomer(false);
-      return;
     }
-
-    // Do not schedule another lookup while the current request is in flight
-    // or after this exact document ID has already been checked.
-    if (lookupState === "checking") return;
-    if (lookedUpDocumentId === documentId &&
-      (lookupState === "found" || lookupState === "not-found" || lookupState === "error")) {
-      return;
-    }
-
-    // Wait until the user has stopped typing for two seconds.
-    const timeout = window.setTimeout(() => {
-      void lookupCustomer(documentId);
-    }, 2000);
-
-    return () => window.clearTimeout(timeout);
-  }, [customer.documentId, lookupCustomer, lookedUpDocumentId, lookupState]);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setOrderError("");
+
     if (!items.length) {
       setOrderError("Agrega al menos un producto al carrito.");
       return;
     }
-    if (!lookupComplete) {
-      setOrderError("Primero introduce la cédula y espera a que termine la búsqueda.");
+    if (hasUnavailable) {
+      setOrderError("Hay productos sin existencias suficientes. Actualiza el carrito antes de continuar.");
       return;
     }
-    if (!knownCustomer && (!customer.firstName.trim() || !customer.lastName.trim() ||
-      !customer.phone.trim() || !customer.email.trim())) {
-      setOrderError("Completa nombre, apellido, teléfono y correo electrónico.");
+    if (isSellerView) {
+      if (!shareToken) {
+        setOrderError("Abre el enlace compartido para registrar esta compra.");
+        return;
+      }
+      if (!lookupComplete) {
+        setOrderError("Introduce la cédula y espera a que termine la búsqueda en tu directorio.");
+        return;
+      }
+      if (!customer.firstName.trim() || !customer.lastName.trim() || !customer.phone.trim()) {
+        setOrderError("Completa nombre, apellido y teléfono del cliente.");
+        return;
+      }
+      if (!acceptCustomerData) {
+        setOrderError("Confirma que el cliente autorizó el uso de sus datos para registrar la compra.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const response = await api.post<SaleResponse>("/sales", {
+          sharedCartToken: shareToken,
+          customer: {
+            documentId: normalizeDocumentId(customer.documentId),
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            phone: customer.phone,
+            email: customer.email,
+            address: customer.address,
+          },
+          customerDataConsent: true,
+          initialPayment: 0,
+          note: customer.note,
+        });
+        setSuccess({
+          kind: "sale",
+          reference: response.data.sale.saleNumber,
+          total: response.data.sale.total,
+        });
+        setItems([]);
+        writePublicCart(resellerId, []);
+      } catch (error) {
+        setOrderError(messageFrom(error, "No pudimos registrar la venta. Comprueba los datos e inténtalo de nuevo."));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (!isBuyerView || !viewer) {
+      setOrderError("Inicia sesión como comprador o comparte el carrito con el vendedor para continuar.");
       return;
     }
     if (!acceptCustomerData) {
-      setOrderError("Acepta el uso de tus datos para gestionar el pedido antes de continuar.");
-      return;
-    }
-    if (hasUnavailable) {
-      setOrderError("Hay productos sin existencias suficientes. Ajusta las cantidades antes de enviar el pedido.");
+      setOrderError("Autoriza compartir tus datos de cuenta con esta tienda para gestionar el pedido.");
       return;
     }
 
@@ -358,59 +411,28 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
       const response = await api.post<OrderResponse>("/public-orders", {
         resellerId,
         items: draft(items),
-        customer: {
-          documentId: normalizeDocumentId(customer.documentId),
-          address: customer.address,
-          ...(knownCustomer ? {} : {
-            firstName: customer.firstName,
-            lastName: customer.lastName,
-            phone: customer.phone,
-            email: customer.email,
-          }),
-        },
-        customerSessionToken: customerToken || undefined,
-        rememberCustomer: rememberData,
-        customerDataConsent: acceptCustomerData,
-        notificationsWhatsAppConsent,
-        notificationsEmailConsent,
+        address: customer.address,
         note: customer.note,
+        customerDataConsent: true,
       });
-      setSuccess(response.data.order);
+      setSuccess({
+        kind: "order",
+        reference: response.data.order.orderNumber,
+        total: response.data.order.subtotal,
+      });
       setItems([]);
       writePublicCart(resellerId, []);
-      if (rememberData && response.data.customerSessionToken) {
-        try {
-          const nextSession = {
-            documentId: normalizeDocumentId(customer.documentId),
-            token: response.data.customerSessionToken,
-          } satisfies StoredCustomerSession;
-          localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(nextSession));
-          setStoredCustomerSession(nextSession);
-        } catch {
-          // El pedido ya se registró; si no se puede guardar localmente, la próxima vez se completarán los datos manualmente.
-        }
-      } else {
-        try {
-          const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
-          if (raw && normalizeDocumentId((JSON.parse(raw) as StoredCustomerSession).documentId) === normalizeDocumentId(customer.documentId)) {
-            localStorage.removeItem(CUSTOMER_SESSION_KEY);
-            setStoredCustomerSession(null);
-          }
-        } catch {
-          // No bloquea el pedido.
-        }
-      }
     } catch (error) {
-      setOrderError(messageFrom(error, "No pudimos enviar la solicitud. Revisa los datos e inténtalo de nuevo."));
+      setOrderError(messageFrom(error, "No pudimos registrar la solicitud. Inténtalo de nuevo."));
     } finally {
       setBusy(false);
     }
   }
 
   const sellerDigits = sellerPhone.replace(/[^0-9]/g, "");
-  const whatsappLink = success && sellerDigits
+  const whatsappLink = success?.kind === "order" && sellerDigits
     ? "https://wa.me/" + sellerDigits + "?text=" + encodeURIComponent(
-        "Hola " + storeName + ", envié el pedido " + success.orderNumber + ". ¿Podemos confirmar disponibilidad y entrega?",
+        "Hola " + storeName + ", envié el pedido " + success.reference + ". ¿Podemos confirmar disponibilidad y entrega?",
       )
     : "";
 
@@ -421,10 +443,14 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           <PublicStorefrontHeader resellerId={resellerId} storeSlug={storeSlug} storeName={storeName} logoUrl={logoUrl} />
           <div className="public-cart-result">
             <span className="public-cart-result-icon"><CheckCircle2 size={28} /></span>
-            <span className="public-catalog-kicker">SOLICITUD REGISTRADA</span>
-            <h1>¡Gracias por tu pedido!</h1>
-            <p>Tu solicitud <strong>{success.orderNumber}</strong> contiene todos los productos del carrito. El vendedor confirmará existencias, precio final y entrega antes de registrar la venta.</p>
-            <div className="public-cart-result-total"><span>Total estimado</span><strong>{money(success.subtotal)}</strong></div>
+            <span className="public-catalog-kicker">{success.kind === "sale" ? "VENTA REGISTRADA" : "SOLICITUD REGISTRADA"}</span>
+            <h1>{success.kind === "sale" ? "¡Compra registrada!" : "¡Gracias por tu pedido!"}</h1>
+            <p>
+              {success.kind === "sale"
+                ? "La venta " + success.reference + " fue registrada. Se actualizaron las existencias y las cuentas correspondientes."
+                : "Tu solicitud " + success.reference + " fue enviada. El vendedor confirmará existencias, importe final y entrega."}
+            </p>
+            <div className="public-cart-result-total"><span>{success.kind === "sale" ? "Total de la venta" : "Total estimado"}</span><strong>{money(success.total)}</strong></div>
             {whatsappLink ? <a className="public-order-whatsapp" href={whatsappLink} target="_blank" rel="noreferrer">Continuar por WhatsApp</a> : null}
             <Link href={"/tienda/" + storeSlug} className="public-product-back-link"><ArrowLeft size={14} /> Volver a la tienda</Link>
           </div>
@@ -451,7 +477,17 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
         {cartError ? <div className="public-cart-feedback error" role="alert">{cartError}</div> : null}
         {cartMessage ? <div className="public-cart-feedback success" role="status">{cartMessage}</div> : null}
         {shareMessage ? <div className="public-cart-feedback success" role="status">{shareMessage}</div> : null}
-        {sharedUrl ? <div className="public-cart-share-link"><label htmlFor="public-cart-shared-url">Enlace compartible</label><input id="public-cart-shared-url" value={sharedUrl} readOnly onFocus={(event) => event.currentTarget.select()} /><button type="button" className="public-cart-secondary-button" onClick={() => { void navigator.clipboard.writeText(sharedUrl).then(() => setShareMessage("Enlace copiado." )).catch(() => setShareMessage("Selecciona el enlace y cópialo manualmente.")); }}>Copiar de nuevo</button></div> : null}
+        {sharedUrl ? (
+          <div className="public-cart-share-link">
+            <label htmlFor="public-cart-shared-url">Enlace compartible</label>
+            <input id="public-cart-shared-url" value={sharedUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+            <button type="button" className="public-cart-secondary-button" onClick={() => {
+              void navigator.clipboard.writeText(sharedUrl)
+                .then(() => setShareMessage("Enlace copiado."))
+                .catch(() => setShareMessage("Selecciona el enlace y cópialo manualmente."));
+            }}>Copiar de nuevo</button>
+          </div>
+        ) : null}
 
         {loadingCart ? (
           <div className="public-cart-loading"><LoaderCircle className="public-order-spinner" size={24} /> Cargando carrito...</div>
@@ -459,7 +495,7 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
           <section className="public-cart-empty">
             <span className="public-cart-empty-icon"><ShoppingBag size={28} /></span>
             <h2>Tu carrito está vacío</h2>
-            <p>Explora el catálogo y añade los productos que te interesan. Después podrás enviar una única solicitud con todos ellos.</p>
+            <p>Explora el catálogo y añade los productos que te interesan. Después podrás compartir el carrito con el vendedor.</p>
             <Link href={"/tienda/" + storeSlug} className="public-order-submit"><ShoppingBag size={16} /> Explorar productos</Link>
           </section>
         ) : (
@@ -467,7 +503,9 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
             <section className="public-cart-items-panel">
               <div className="public-cart-panel-heading">
                 <div><span className="panel-kicker">Resumen</span><h2>{items.length} {items.length === 1 ? "variante" : "variantes"} · {totalQuantity(items)} unidades</h2></div>
-                <button type="button" className="public-cart-secondary-button" onClick={() => void updatePrices()} disabled={busy}><LoaderCircle size={14} className={busy ? "public-order-spinner" : ""} /> Actualizar precios</button>
+                <button type="button" className="public-cart-secondary-button" onClick={() => void updatePrices()} disabled={busy}>
+                  <LoaderCircle size={14} className={busy ? "public-order-spinner" : ""} /> Actualizar precios
+                </button>
               </div>
               <div className="public-cart-items-list">
                 {items.map((item) => (
@@ -492,143 +530,134 @@ export function PublicCartExperience({ resellerId, storeSlug, storeName, sellerP
                 ))}
               </div>
               <div className="public-cart-share-area">
-                <div><strong>¿Quieres que alguien revise esta compra?</strong><p>Comparte un enlace del carrito con todos los artículos. El enlace caduca en 30 días.</p></div>
-                <button type="button" onClick={() => void shareCart()} className="public-cart-secondary-button" disabled={busy || hasUnavailable}><Share2 size={15} /> Copiar enlace compartible</button>
+                <div>
+                  <strong>¿Quieres que alguien revise esta compra?</strong>
+                  <p>Comparte un enlace con todos los artículos. El enlace caduca en 30 días.</p>
+                </div>
+                <button type="button" onClick={() => void shareCart()} className="public-cart-secondary-button" disabled={busy || hasUnavailable}>
+                  <Share2 size={15} /> Compartir carrito
+                </button>
               </div>
             </section>
 
             <aside className="public-cart-checkout-panel">
-              <div className="public-cart-panel-heading"><div><span className="panel-kicker">Finalizar</span><h2>Datos del cliente</h2></div></div>
-              <p className="public-cart-checkout-hint">Introduce tu cédula. Buscaremos el registro automáticamente tras dos segundos sin escribir; después aparecerán solo los campos que necesitas completar.</p>
-
-              <form className="public-cart-customer-form" onSubmit={handleSubmit}>
-                <label className="public-order-field">
-                  <span>Cédula *</span>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      value={customer.documentId}
-                      onChange={(event) => {
-                        const documentId = event.target.value;
-                        setCustomer({ ...blankCustomer, documentId });
-                        setKnownCustomer(false);
-                        setCustomerToken("");
-                        setLookupState("idle");
-                        setLookedUpDocumentId("");
-                        setLookupMessage("");
-                        setAcceptCustomerData(false);
-                        setNotificationsWhatsAppConsent(false);
-                        setNotificationsEmailConsent(false);
-                        setRememberData(false);
-                        setOrderError("");
-                      }}
-                      maxLength={40}
-                      autoComplete="off"
-                      required
-                      disabled={busy || lookupLoading}
-                      placeholder="Introduce tu número de cédula"
-                      style={lookupLoading ? { paddingRight: 44 } : undefined}
-                    />
-                    {lookupLoading ? (
-                      <LoaderCircle
-                        size={17}
-                        className="public-order-spinner"
-                        aria-label="Buscando coincidencias"
-                        style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+              {isSellerView ? (
+                <>
+                  <div className="public-cart-panel-heading"><div><span className="panel-kicker">Venta asistida</span><h2>Registrar compra del cliente</h2></div></div>
+                  <p className="public-cart-checkout-hint">El enlace de tu tienda llegó a tu cuenta. Completa o recupera los datos del cliente y registra la venta desde aquí.</p>
+                  <form className="public-cart-customer-form" onSubmit={handleSubmit}>
+                    <label className="public-order-field">
+                      <span>Cédula del cliente *</span>
+                      <input
+                        value={customer.documentId}
+                        onChange={(event) => updateCustomer("documentId", event.target.value)}
+                        maxLength={40}
+                        autoComplete="off"
+                        required
+                        disabled={busy || lookupLoading}
+                        placeholder="Cédula o documento"
                       />
+                    </label>
+                    {lookupLoading ? <p className="public-cart-lookup-note" role="status"><LoaderCircle size={14} className="public-order-spinner" /> Buscando en tu directorio...</p> : null}
+                    {lookupMessage ? <p className={"public-cart-lookup-note" + (lookupState === "found" ? " success" : "")} role="status">{lookupMessage}</p> : null}
+                    {lookupState === "found" || lookupState === "not-found" ? (
+                      <>
+                        <div className="public-order-form-grid">
+                          <label className="public-order-field">
+                            <span>Nombre *</span>
+                            <input required maxLength={100} value={customer.firstName} onChange={(event) => updateCustomer("firstName", event.target.value)} disabled={busy} autoComplete="given-name" />
+                          </label>
+                          <label className="public-order-field">
+                            <span>Apellido *</span>
+                            <input required maxLength={100} value={customer.lastName} onChange={(event) => updateCustomer("lastName", event.target.value)} disabled={busy} autoComplete="family-name" />
+                          </label>
+                        </div>
+                        <label className="public-order-field">
+                          <span>Teléfono / WhatsApp *</span>
+                          <input required maxLength={40} type="tel" value={customer.phone} onChange={(event) => updateCustomer("phone", event.target.value)} disabled={busy} autoComplete="tel" />
+                        </label>
+                        <label className="public-order-field">
+                          <span>Correo electrónico (opcional)</span>
+                          <input maxLength={200} type="email" value={customer.email} onChange={(event) => updateCustomer("email", event.target.value)} disabled={busy} autoComplete="email" />
+                        </label>
+                        <label className="public-order-field">
+                          <span>Dirección de entrega (opcional)</span>
+                          <input maxLength={300} value={customer.address} onChange={(event) => updateCustomer("address", event.target.value)} disabled={busy} autoComplete="street-address" />
+                        </label>
+                        <label className="public-order-field">
+                          <span>Nota (opcional)</span>
+                          <textarea maxLength={500} rows={2} value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} disabled={busy} />
+                        </label>
+                        <label className="public-cart-remember-row">
+                          <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
+                          <span>Confirmo que el cliente autorizó guardar y utilizar estos datos para gestionar su compra.</span>
+                        </label>
+                        <div className="public-cart-checkout-totals">
+                          <div><span>Artículos</span><strong>{totalQuantity(items)}</strong></div>
+                          <div className="public-cart-checkout-grand-total"><span>Total de la venta</span><strong>{money(subtotal)}</strong></div>
+                        </div>
+                        {orderError ? <p className="public-cart-error" role="alert">{orderError}</p> : null}
+                        <button className="public-order-submit" type="submit" disabled={busy || lookupLoading || !lookupComplete || !acceptCustomerData || hasUnavailable}>
+                          {busy ? <LoaderCircle className="public-order-spinner" size={17} /> : <ClipboardList size={17} />}
+                          {busy ? "Registrando venta..." : "Registrar compra"}
+                        </button>
+                        <p className="public-order-disclaimer">La venta descontará las existencias y actualizará las cuentas correspondientes. El perfil del cliente no tendrá contraseña ni acceso a una cuenta.</p>
+                      </>
                     ) : null}
-                  </div>
-                </label>
-
-                {lookupMessage ? (
-                  <p className={"public-cart-lookup-note" + (lookupState === "found" ? " success" : "") + (lookupComplete ? " public-cart-reveal" : "")} role="status">
-                    {lookupMessage}
-                  </p>
-                ) : null}
-                {lookupState === "found" ? (
-                  <div className="public-cart-identity-confirmation public-cart-reveal">
-                    <p>Encontramos estos datos. Verifica que la cédula corresponda a tu identidad:</p>
+                  </form>
+                </>
+              ) : isBuyerView && viewer ? (
+                <>
+                  <div className="public-cart-panel-heading"><div><span className="panel-kicker">Finalizar</span><h2>Tus datos de compra</h2></div></div>
+                  <p className="public-cart-checkout-hint">Usaremos los datos de tu cuenta. No tendrás que escribir tu cédula ni volver a completar tus datos personales.</p>
+                  <form className="public-cart-customer-form" onSubmit={handleSubmit}>
                     <div className="public-order-form-grid">
-                      <label className="public-order-field">
-                        <span>Nombre</span>
-                        <input value={customer.firstName} readOnly disabled={busy || lookupLoading} />
-                      </label>
-                      <label className="public-order-field">
-                        <span>Apellido</span>
-                        <input value={customer.lastName} readOnly disabled={busy || lookupLoading} />
-                      </label>
+                      <label className="public-order-field"><span>Nombre</span><input value={viewer.firstName} readOnly /></label>
+                      <label className="public-order-field"><span>Apellido</span><input value={viewer.lastName} readOnly /></label>
                     </div>
-                    <p>Por seguridad, no mostramos el teléfono, el correo ni otros datos personales guardados.</p>
-                  </div>
-                ) : null}
-
-                {lookupState === "not-found" ? (
-                  <div className="public-cart-reveal" key={"new-customer-" + lookedUpDocumentId}>
-                    <div className="public-order-form-grid">
-                      <label className="public-order-field">
-                        <span>Nombre *</span>
-                        <input required maxLength={100} autoComplete="given-name" value={customer.firstName} onChange={(event) => updateCustomer("firstName", event.target.value)} disabled={busy || lookupLoading} placeholder="Tu nombre" />
-                      </label>
-                      <label className="public-order-field">
-                        <span>Apellido *</span>
-                        <input required maxLength={100} autoComplete="family-name" value={customer.lastName} onChange={(event) => updateCustomer("lastName", event.target.value)} disabled={busy || lookupLoading} placeholder="Tu apellido" />
-                      </label>
-                    </div>
-
+                    <label className="public-order-field"><span>Cédula</span><input value={viewer.documentId} readOnly /></label>
+                    <label className="public-order-field"><span>Teléfono</span><input value={viewer.phone} readOnly /></label>
+                    <label className="public-order-field"><span>Correo electrónico</span><input value={viewer.email} readOnly /></label>
                     <label className="public-order-field">
-                      <span>Teléfono / WhatsApp *</span>
-                      <input required maxLength={40} type="tel" autoComplete="tel" value={customer.phone} onChange={(event) => updateCustomer("phone", event.target.value)} disabled={busy || lookupLoading} placeholder="Número de contacto" />
+                      <span>Dirección de entrega (opcional)</span>
+                      <input maxLength={300} value={customer.address} onChange={(event) => updateCustomer("address", event.target.value)} disabled={busy} autoComplete="street-address" placeholder="Dirección o lugar de entrega" />
                     </label>
                     <label className="public-order-field">
-                      <span>Correo electrónico *</span>
-                      <input required maxLength={200} type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer("email", event.target.value)} disabled={busy || lookupLoading} placeholder="tu@correo.com" />
+                      <span>Nota (opcional)</span>
+                      <textarea maxLength={500} rows={2} value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} disabled={busy} placeholder="Indicaciones para el vendedor..." />
                     </label>
-                  </div>
-                ) : null}
-
-                {lookupComplete ? (
-                  <div className="public-cart-reveal public-cart-reveal-delayed" key={"checkout-fields-" + lookedUpDocumentId}>
-                <label className="public-order-field">
-                  <span>Dirección de entrega (opcional)</span>
-                  <input value={customer.address} onChange={(event) => updateCustomer("address", event.target.value)} maxLength={300} autoComplete="street-address" disabled={busy} placeholder="Dirección o lugar de entrega" />
-                </label>
-                <label className="public-order-field">
-                  <span>Nota (opcional)</span>
-                  <textarea value={customer.note} onChange={(event) => updateCustomer("note", event.target.value)} maxLength={500} rows={2} disabled={busy} placeholder="Indicaciones para el vendedor..." />
-                </label>
-
-                <label className="public-cart-remember-row">
-                  <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
-                  <span>Acepto que se guarden mis datos para gestionar este pedido y facilitar futuras compras. Este perfil no crea una cuenta de acceso ni tiene contraseña.</span>
-                </label>
-                <label className="public-cart-remember-row">
-                  <input type="checkbox" checked={notificationsWhatsAppConsent} onChange={(event) => setNotificationsWhatsAppConsent(event.target.checked)} disabled={busy} />
-                  <span>Acepto recibir futuras actualizaciones de pedidos por WhatsApp cuando esta función esté disponible.</span>
-                </label>
-                <label className="public-cart-remember-row">
-                  <input type="checkbox" checked={notificationsEmailConsent} onChange={(event) => setNotificationsEmailConsent(event.target.checked)} disabled={busy} />
-                  <span>Acepto recibir futuras actualizaciones de pedidos por correo cuando esta función esté disponible.</span>
-                </label>
-                {(!knownCustomer || Boolean(customerToken)) ? (
-                  <label className="public-cart-remember-row">
-                    <input type="checkbox" checked={rememberData} onChange={(event) => setRememberData(event.target.checked)} disabled={busy} />
-                    <span>Guardar una clave segura de este perfil en este dispositivo para facilitar un futuro registro de cuenta. No lo marques en un equipo compartido.</span>
-                  </label>
-                ) : null}
-
-                <div className="public-cart-checkout-totals">
-                  <div><span>Artículos</span><strong>{totalQuantity(items)}</strong></div>
-                  <div className="public-cart-checkout-grand-total"><span>Total estimado</span><strong>{money(subtotal)}</strong></div>
-                </div>
-                {hasUnavailable ? <p className="public-cart-error">Hay productos sin existencias suficientes. Ajusta su cantidad o elimínalos.</p> : null}
-                {orderError ? <p className="public-cart-error" role="alert">{orderError}</p> : null}
-                <button className="public-order-submit" type="submit" disabled={!canSubmit}>
-                  {busy ? <LoaderCircle className="public-order-spinner" size={17} /> : <ClipboardList size={17} />}
-                  {busy ? "Enviando solicitud..." : "Enviar solicitud de pedido"}
-                </button>
-                <p className="public-order-disclaimer">Esto no es un cobro ni una reserva de inventario. El vendedor confirmará disponibilidad, importe final y entrega.</p>
-                  </div>
-                ) : null}
-              </form>
+                    <label className="public-cart-remember-row">
+                      <input type="checkbox" required checked={acceptCustomerData} onChange={(event) => setAcceptCustomerData(event.target.checked)} disabled={busy} />
+                      <span>Autorizo compartir mis datos de cuenta con esta tienda para gestionar este pedido y facilitar futuras compras.</span>
+                    </label>
+                    <div className="public-cart-checkout-totals">
+                      <div><span>Artículos</span><strong>{totalQuantity(items)}</strong></div>
+                      <div className="public-cart-checkout-grand-total"><span>Total estimado</span><strong>{money(subtotal)}</strong></div>
+                    </div>
+                    {orderError ? <p className="public-cart-error" role="alert">{orderError}</p> : null}
+                    <button className="public-order-submit" type="submit" disabled={busy || !acceptCustomerData || hasUnavailable}>
+                      {busy ? <LoaderCircle className="public-order-spinner" size={17} /> : <ClipboardList size={17} />}
+                      {busy ? "Enviando solicitud..." : "Enviar solicitud de pedido"}
+                    </button>
+                    <p className="public-order-disclaimer">Esto no es un cobro ni una reserva de inventario. El vendedor confirmará disponibilidad, importe final y entrega.</p>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div className="public-cart-panel-heading"><div><span className="panel-kicker">Compartir</span><h2>Enviar carrito al vendedor</h2></div></div>
+                  <p className="public-cart-checkout-hint">Para registrar una compra, inicia sesión con una cuenta de comprador o comparte este carrito con el dueño de la tienda. El visitante sin sesión no puede enviar pedidos ni consultar datos por cédula.</p>
+                  {orderError ? <p className="public-cart-error" role="alert">{orderError}</p> : null}
+                  <button type="button" className="public-order-submit" onClick={() => void shareCart()} disabled={busy || hasUnavailable}>
+                    <Share2 size={16} /> Compartir carrito con el vendedor
+                  </button>
+                  <Link
+                    href={"/login?next=" + encodeURIComponent("/tienda/" + storeSlug + "/carrito?share=" + shareToken)}
+                    className="public-product-back-link"
+                  >
+                    Ya tengo cuenta · Iniciar sesión
+                  </Link>
+                </>
+              )}
             </aside>
           </div>
         )}
