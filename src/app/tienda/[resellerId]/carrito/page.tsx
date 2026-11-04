@@ -43,7 +43,7 @@ async function getViewer() {
     const payload = await verifySessionToken(token);
     await connectMongoDB();
     const user = await UserModel.findOne({ _id: payload.sub, isActive: true })
-      .select("_id role documentId firstName lastName phone email")
+      .select("_id role documentId firstName lastName phone email sessionInvalidBefore")
       .lean() as unknown as {
         _id: mongoose.Types.ObjectId;
         role: "ADMIN" | "RESELLER";
@@ -52,9 +52,11 @@ async function getViewer() {
         lastName: string;
         phone: string;
         email: string;
+        sessionInvalidBefore: Date | null;
       } | null;
 
     if (!user) return null;
+    if (user.sessionInvalidBefore && Number(payload.iat ?? 0) < Math.floor(user.sessionInvalidBefore.getTime() / 1000)) return null;
     return {
       id: String(user._id),
       role: user.role,

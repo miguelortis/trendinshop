@@ -3,6 +3,8 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  requestPasswordReset,
+  resetPassword,
 } from "@/lib/api/auth";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
@@ -56,6 +58,8 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   if (resource === "auth") {
     if (method === "POST" && action === "register") return registerUser(request);
     if (method === "POST" && action === "login") return loginUser(request);
+    if (method === "POST" && action === "password-reset-request") return requestPasswordReset(request);
+    if (method === "POST" && action === "password-reset") return resetPassword(request);
     if (method === "GET" && action === "me") return getCurrentUser(request);
     if (method === "POST" && action === "logout") return logoutUser();
   }

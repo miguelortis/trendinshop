@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
-import { createSale } from "@/lib/api/sales";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicOrderModel } from "@/models/PublicOrder";

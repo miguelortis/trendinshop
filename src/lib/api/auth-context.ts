@@ -28,6 +28,7 @@ export async function getAuthenticatedUser(request: Request): Promise<AuthContex
     const user = await UserModel.findById(payload.sub).exec();
 
     if (!user || !user.isActive) return null;
+    if (user.sessionInvalidBefore && Number(payload.iat ?? 0) < Math.floor(user.sessionInvalidBefore.getTime() / 1000)) return null;
 
     return {
       id: user._id.toString(),

@@ -17,6 +17,7 @@ const userSchema = new Schema(
     storeSlug: { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 40 },
     role: { type: String, enum: ["ADMIN", "RESELLER"], default: "RESELLER", required: true, index: true },
     isActive: { type: Boolean, default: true, required: true, index: true },
+    sessionInvalidBefore: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false },
 );

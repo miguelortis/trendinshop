@@ -24,7 +24,7 @@ export async function enforceRateLimit(
 
   await connectMongoDB();
 
-  let record;
+  let record: { count: number } | null = null;
   try {
     record = await RateLimitModel.findOneAndUpdate(
       { key },

@@ -119,7 +119,7 @@ export default function RegisterPage() {
                 <label className="field"><span>Confirmar contraseña</span><div className="password-input"><LockKeyhole size={16} /><input type={showConfirm ? "text" : "password"} placeholder="Repite la contraseña" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required disabled={loading} /><button type="button" onClick={() => setShowConfirm((value) => !value)}>{showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
               </div>
 
-              <label className="check-row register-check"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} required disabled={loading} /><span>Acepto los términos de servicio y la política de privacidad.</span></label>
+              <label className="check-row register-check"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} required disabled={loading} /><span>Acepto los <Link href="/terms">términos de servicio</Link> y la <Link href="/privacy">política de privacidad</Link>.</span></label>
               <button className="auth-submit" type="submit" disabled={loading}>
                 {loading ? "Creando cuenta..." : "Crear mi cuenta"}
                 {!loading && <ArrowRight size={17} />}

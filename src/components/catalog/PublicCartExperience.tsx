@@ -649,7 +649,12 @@ export function PublicCartExperience({
                   <button type="button" className="public-order-submit" onClick={() => void shareCart()} disabled={busy || hasUnavailable}>
                     <Share2 size={16} /> Compartir carrito con el vendedor
                   </button>
-                  <Link href="/login" className="public-product-back-link">Ya tengo cuenta · Iniciar sesión</Link>
+                  <Link
+                    href={"/login?next=" + encodeURIComponent("/tienda/" + storeSlug + "/carrito?share=" + shareToken)}
+                    className="public-product-back-link"
+                  >
+                    Ya tengo cuenta · Iniciar sesión
+                  </Link>
                 </>
               )}
             </aside>

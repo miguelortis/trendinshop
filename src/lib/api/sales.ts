@@ -438,7 +438,7 @@ export async function createSale(request: Request, userId: string, userRole: str
       ? body.customer as Record<string, unknown>
       : {};
     const submittedCustomer = {
-      documentId: text(customerBody.documentId).toUpperCase().replace(/[.\\s-]/g, ""),
+      documentId: text(customerBody.documentId).toUpperCase().replace(/[.\s-]/g, ""),
       firstName: text(customerBody.firstName),
       lastName: text(customerBody.lastName),
       phone: text(customerBody.phone),
@@ -456,7 +456,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         submittedCustomer.email.length > 200 || submittedCustomer.address.length > 300) {
         return errorResponse("Completa la cédula, nombre, apellido y teléfono del cliente.");
       }
-      if (submittedCustomer.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(submittedCustomer.email)) {
+      if (submittedCustomer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedCustomer.email)) {
         return errorResponse("El correo electrónico del cliente no es válido.");
       }
       if (customerId) return errorResponse("No combines un cliente guardado con un carrito compartido.");

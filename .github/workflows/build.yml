@@ -25,5 +25,9 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Run unit tests
+        run: npm test
+      - name: Lint
+        run: npm run lint
       - name: Build application
         run: npm run build
