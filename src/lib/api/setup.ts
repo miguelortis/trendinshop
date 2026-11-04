@@ -3,6 +3,7 @@ import { connectMongoDB } from "@/lib/db/mongodb";
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { UserModel } from "@/models/User";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 const COOKIE_BASE = {
   httpOnly: true,
@@ -22,6 +23,9 @@ export async function bootstrapAdmin(request: Request) {
   if (user.role === "ADMIN") {
     return NextResponse.json({ ok: true, message: "Tu cuenta ya es administradora." });
   }
+
+  const blocked = await enforceRateLimit(request, "admin-bootstrap", 5, 60 * 60 * 1000, user.id);
+  if (blocked) return blocked;
 
   const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
   if (!bootstrapKey) {

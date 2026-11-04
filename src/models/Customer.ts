@@ -9,6 +9,8 @@ const customerSchema = new Schema(
     phone: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true, default: "" },
     address: { type: String, trim: true, default: "" },
+    dataProcessingConsent: { type: Boolean, default: false, required: true },
+    dataProcessingConsentAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true, required: true, index: true },
   },
   { timestamps: true, versionKey: false },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CustomerModel } from "@/models/Customer";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type CustomerInput = {
   documentId: string;
@@ -67,6 +68,42 @@ function serializeCustomer<T extends { _id: unknown }>(customer: T) {
     createdAt: value.createdAt instanceof Date ? value.createdAt : undefined,
     updatedAt: value.updatedAt instanceof Date ? value.updatedAt : undefined,
   };
+}
+
+export async function lookupCustomerByDocument(request: Request, userId: string) {
+  const blocked = await enforceRateLimit(request, "customer-lookup", 20, 15 * 60 * 1000, userId);
+  if (blocked) return blocked;
+
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const documentId = normalizeDocumentId(body.documentId);
+    if (!documentId || documentId.length > 40) {
+      return errorResponse("Introduce una cédula válida.", 400, "INVALID_DOCUMENT_ID");
+    }
+
+    await connectMongoDB();
+    const customer = await CustomerModel.findOne({
+      ownerId: userId,
+      documentId,
+      isActive: true,
+    }).select("documentId firstName lastName phone email address").lean();
+
+    return NextResponse.json({
+      ok: true,
+      exists: Boolean(customer),
+      customer: customer ? {
+        documentId: customer.documentId,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        phone: customer.phone,
+        email: customer.email ?? "",
+        address: customer.address ?? "",
+      } : null,
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  } catch (error) {
+    console.error("[CUSTOMER_LOOKUP]", error);
+    return errorResponse("No pudimos consultar el cliente. Inténtalo de nuevo.", 500, "INTERNAL_ERROR");
+  }
 }
 
 export async function listCustomers(userId: string) {

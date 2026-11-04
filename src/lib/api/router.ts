@@ -14,13 +14,13 @@ import {
   updateResellerCatalogItem,
 } from "@/lib/api/reseller-catalog";
 import { adjustInventory, listInventory } from "@/lib/api/inventory";
-import { createCustomer, listCustomers, removeCustomer, updateCustomer } from "@/lib/api/customers";
+import { createCustomer, listCustomers, lookupCustomerByDocument, removeCustomer, updateCustomer } from "@/lib/api/customers";
 import { cancelSale, createSale, getSaleOptions, listSales } from "@/lib/api/sales";
 import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
 import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
 import { getDashboardSummary } from "@/lib/api/dashboard-summary";
 import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
-import { lookupPublicCustomer } from "@/lib/api/public-customers";
+
 import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
 import { listSupplierPayables, listSupplierPayments, registerSupplierPayment, reviewSupplierPayment } from "@/lib/api/supplier-payables";
 import { bootstrapAdmin } from "@/lib/api/setup";
@@ -69,10 +69,6 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "POST" && action === "share") return createPublicCartShare(request);
     if (method === "GET" && action === "share") return getPublicCartShare(request);
   }
-  if (resource === "public-customers" && method === "POST" && action === "lookup") {
-    return lookupPublicCustomer(request);
-  }
-
   const user = await getAuthenticatedUser(request);
   if (!user) return unauthorized();
 
@@ -141,6 +137,7 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (resource === "customers") {
+    if (method === "POST" && action === "lookup") return lookupCustomerByDocument(request, user.id);
     if (method === "GET") return listCustomers(user.id);
     if (method === "POST" && !action) return createCustomer(request, user.id);
     if ((method === "PUT" || method === "PATCH") && action) {

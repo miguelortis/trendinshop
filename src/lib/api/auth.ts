@@ -4,7 +4,7 @@ import { assertAuthConfiguration, createSessionToken, SESSION_COOKIE_NAME, verif
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { UserModel } from "@/models/User";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
-import { hasCustomerSessionToken, normalizeCustomerDocumentId } from "@/lib/customer-session";
+import { normalizeCustomerDocumentId } from "@/lib/customer-session";
 
 const COOKIE_BASE = {
   httpOnly: true,
