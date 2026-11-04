@@ -46,7 +46,7 @@ export async function bootstrapAdmin(request: Request) {
   }
 
   let session: mongoose.ClientSession | null = null;
-  const activation: { promoted?: { _id: mongoose.Types.ObjectId } } = {};
+  const activation: { promoted?: { _id: mongoose.Types.ObjectId } | null } = {};
 
   try {
     await connectMongoDB();
