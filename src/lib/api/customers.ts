@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectMongoDB } from "@/lib/db/mongodb";
 import { CustomerModel } from "@/models/Customer";
+import { CustomerIdentityModel } from "@/models/CustomerIdentity";
+import { UserModel } from "@/models/User";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type CustomerInput = {
@@ -88,16 +90,59 @@ export async function lookupCustomerByDocument(request: Request, userId: string)
       isActive: true,
     }).select("documentId firstName lastName phone email address").lean();
 
+    // A profile that was converted to an account is the source of truth for
+    // names and contact details, but only within a seller directory that
+    // already contains this customer. This never exposes a global lookup.
+    let currentCustomer = customer;
+    if (customer) {
+      const identity = await CustomerIdentityModel.findOne({
+        documentId,
+        isActive: true,
+        convertedUserId: { $ne: null },
+      }).select("convertedUserId").lean() as unknown as { convertedUserId?: mongoose.Types.ObjectId } | null;
+      if (identity?.convertedUserId) {
+        const account = await UserModel.findOne({
+          _id: identity.convertedUserId,
+          documentId,
+          isActive: true,
+        }).select("documentId firstName lastName phone email").lean() as unknown as {
+          documentId: string;
+          firstName: string;
+          lastName: string;
+          phone: string;
+          email: string;
+        } | null;
+        if (account) {
+          await CustomerModel.updateOne(
+            { _id: customer._id, ownerId: userId },
+            { $set: {
+              firstName: account.firstName,
+              lastName: account.lastName,
+              phone: account.phone,
+              email: account.email,
+            } },
+          );
+          currentCustomer = {
+            ...customer,
+            firstName: account.firstName,
+            lastName: account.lastName,
+            phone: account.phone,
+            email: account.email,
+          };
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      exists: Boolean(customer),
-      customer: customer ? {
-        documentId: customer.documentId,
-        firstName: customer.firstName,
-        lastName: customer.lastName,
-        phone: customer.phone,
-        email: customer.email ?? "",
-        address: customer.address ?? "",
+      exists: Boolean(currentCustomer),
+      customer: currentCustomer ? {
+        documentId: currentCustomer.documentId,
+        firstName: currentCustomer.firstName,
+        lastName: currentCustomer.lastName,
+        phone: currentCustomer.phone,
+        email: currentCustomer.email ?? "",
+        address: currentCustomer.address ?? "",
       } : null,
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
