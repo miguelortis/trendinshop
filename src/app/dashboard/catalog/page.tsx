@@ -1,0 +1,447 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, ExternalLink, Package, Plus, Search, ShoppingBag, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { type FormEvent, useMemo, useState } from "react";
+import { api } from "@/lib/api/client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { ShareProductActions } from "@/components/catalog/ShareProductActions";
+
+type CategoryRef = { _id?: string; name: string; slug?: string };
+type CatalogProduct = {
+  _id: string;
+  title: string;
+  sku: string;
+  description?: string;
+  wholesalePrice: number;
+  images?: { url: string; alt?: string; isPrimary?: boolean }[];
+  categoryId?: CategoryRef | string;
+  availableStock: number;
+  variants: { _id: string; label: string; sku: string; options: { name: string; value: string }[]; stock: number; wholesalePrice: number }[];
+};
+type CatalogItem = {
+  _id: string;
+  productId: string;
+  sellingPrice: number;
+  variantPrices?: { variantId: string; sellingPrice: number }[];
+};
+type CatalogResponse = {
+  ok: true;
+  products: CatalogProduct[];
+  items: CatalogItem[];
+};
+type SavePayload = {
+  productId: string;
+  itemId?: string;
+  sellingPrice: number;
+  variantPrices: { variantId: string; sellingPrice: number }[];
+};
+
+function errorMessage(error: unknown) {
+  const response = error as { response?: { data?: { message?: string } } };
+  return response.response?.data?.message ?? "Ocurrió un error. Inténtalo de nuevo.";
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+
+export default function ResellerCatalogPage() {
+  const { data: user, isLoading: userLoading } = useCurrentUser();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"explore" | "mine">("explore");
+  const [search, setSearch] = useState("");
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState("");
+  const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, string>>({});
+  const [actionError, setActionError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const catalog = useQuery({
+    queryKey: ["reseller-catalog"],
+    enabled: user?.role === "RESELLER",
+    queryFn: async () => (await api.get<CatalogResponse>("/catalog")).data,
+  });
+
+  const itemByProductId = useMemo(() => {
+    const items = new Map<string, CatalogItem>();
+    for (const item of catalog.data?.items ?? []) {
+      items.set(item.productId, item);
+    }
+    return items;
+  }, [catalog.data?.items]);
+
+  const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return (catalog.data?.products ?? [])
+      .filter((product) => activeTab === "explore" || itemByProductId.has(product._id))
+      .filter((product) => {
+        if (!term) return true;
+        const category = typeof product.categoryId === "object" ? product.categoryId?.name ?? "" : "";
+        return [product.title, product.sku, category].join(" ").toLowerCase().includes(term);
+      });
+  }, [activeTab, catalog.data?.products, itemByProductId, search]);
+
+  const saveItem = useMutation({
+    mutationFn: async ({ productId, itemId, sellingPrice, variantPrices }: SavePayload) => {
+      if (itemId) {
+        return (await api.patch("/catalog/" + itemId, { sellingPrice, variantPrices })).data;
+      }
+      return (await api.post("/catalog", { productId, sellingPrice, variantPrices })).data;
+    },
+    onSuccess: async () => {
+      setEditingProductId(null);
+      setPriceDraft("");
+      setVariantPriceDrafts({});
+      setActionError("");
+      await queryClient.invalidateQueries({ queryKey: ["reseller-catalog"] });
+    },
+    onError: (error: unknown) => setActionError(errorMessage(error)),
+  });
+
+  const removeItem = useMutation({
+    mutationFn: async (itemId: string) => api.delete("/catalog/" + itemId),
+    onSuccess: async () => {
+      setEditingProductId(null);
+      setPriceDraft("");
+      setActionError("");
+      await queryClient.invalidateQueries({ queryKey: ["reseller-catalog"] });
+    },
+    onError: (error: unknown) => setActionError(errorMessage(error)),
+  });
+
+  function openEditor(product: CatalogProduct, item?: CatalogItem) {
+    setActionError("");
+    setEditingProductId(product._id);
+    setPriceDraft(item ? String(item.sellingPrice) : "");
+    setVariantPriceDrafts(Object.fromEntries((item?.variantPrices ?? []).map((variant) => [variant.variantId, String(variant.sellingPrice)])));
+  }
+
+  function handleSavePrice(event: FormEvent<HTMLFormElement>, product: CatalogProduct, item?: CatalogItem) {
+    event.preventDefault();
+    setActionError("");
+    saveItem.mutate({
+      productId: product._id,
+      itemId: item?._id,
+      sellingPrice: Number(priceDraft),
+      variantPrices: product.variants
+        .map((variant) => {
+          const raw = variantPriceDrafts[variant._id];
+          return raw !== undefined && raw.trim() !== "" && Number.isFinite(Number(raw)) && Number(raw) > 0
+            ? { variantId: variant._id, sellingPrice: Number(raw) }
+            : null;
+        })
+        .filter((item): item is { variantId: string; sellingPrice: number } => item !== null),
+    });
+  }
+
+  async function handleCopyPublicCatalog() {
+    if (!user?.id) return;
+    const shareUrl = window.location.origin + "/tienda/" + user.id;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setActionError("");
+    } catch {
+      setShareCopied(false);
+      setActionError("No pudimos copiar el enlace automáticamente. Abre “Ver catálogo público” y copia la dirección del navegador.");
+    }
+  }
+
+  if (userLoading) {
+    return <div className="dashboard-page"><div className="panel-card dashboard-loading">Cargando tu cuenta...</div></div>;
+  }
+
+  if (user?.role !== "RESELLER" && user?.role !== "ADMIN") {
+    return (
+      <div className="dashboard-page">
+        <section className="page-heading">
+          <div>
+            <span className="page-kicker">Catálogo personal</span>
+            <h1>Mi catálogo</h1>
+            <p>Necesitas iniciar sesión con una cuenta válida para administrar un catálogo.</p>
+          </div>
+        </section>
+        <div className="panel-card reseller-catalog-restricted">
+          <ShoppingBag size={28} />
+          <strong>No se puede abrir el catálogo personal</strong>
+          <span>Tu cuenta no tiene permisos para administrar este catálogo.</span>
+        </div>
+      </div>
+    );
+  }
+
+  const savedCount = catalog.data?.items.length ?? 0;
+
+  return (
+    <div className="dashboard-page reseller-catalog-page">
+      <section className="page-heading reseller-catalog-heading">
+        <div>
+          <span className="page-kicker">Venta personalizada</span>
+          <h1>Mi catálogo</h1>
+          <p>Selecciona productos disponibles y define el precio al que los ofrecerás a tus clientes.</p>
+        </div>
+        <div className="reseller-catalog-heading-actions">
+          <Link
+            href={"/tienda/" + user.id}
+            target="_blank"
+            rel="noreferrer"
+            className="product-card-action reseller-public-action"
+          >
+            <ExternalLink size={14} /> Ver catálogo público
+          </Link>
+          <button
+            type="button"
+            className="product-card-action primary reseller-share-button"
+            onClick={() => void handleCopyPublicCatalog()}
+          >
+            <Copy size={14} /> {shareCopied ? "Enlace copiado" : "Copiar enlace"}
+          </button>
+        </div>
+      </section>
+
+      <section className="reseller-catalog-summary">
+        <div className="reseller-catalog-summary-icon"><ShoppingBag size={21} /></div>
+        <div>
+          <strong>{savedCount} {savedCount === 1 ? "producto en tu catálogo" : "productos en tu catálogo"}</strong>
+          <span>Tu precio de venta es privado de tu catálogo. El costo de compra del proveedor no se muestra aquí.</span>
+        </div>
+      </section>
+
+      <div className="reseller-catalog-controls">
+        <div className="reseller-catalog-tabs" role="tablist" aria-label="Vista del catálogo">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "explore"}
+            className={activeTab === "explore" ? "active" : ""}
+            onClick={() => { setActiveTab("explore"); setActionError(""); setEditingProductId(null); setVariantPriceDrafts({}); }}
+          >
+            <Search size={15} /> Explorar productos
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "mine"}
+            className={activeTab === "mine" ? "active" : ""}
+            onClick={() => { setActiveTab("mine"); setActionError(""); setEditingProductId(null); }}
+          >
+            <ShoppingBag size={15} /> Mi selección <span>{savedCount}</span>
+          </button>
+        </div>
+        <label className="search-field reseller-catalog-search">
+          <Search size={17} />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nombre, SKU o categoría..."
+            aria-label="Buscar productos"
+          />
+        </label>
+      </div>
+
+      {actionError ? <div className="auth-error reseller-catalog-error">{actionError}</div> : null}
+
+      {catalog.isLoading ? (
+        <div className="panel-card dashboard-loading">Cargando catálogo...</div>
+      ) : catalog.isError ? (
+        <div className="panel-card dashboard-empty product-empty">
+          <div className="dashboard-empty-icon"><Package size={20} /></div>
+          <strong>No pudimos cargar tu catálogo</strong>
+          <span>{errorMessage(catalog.error)}</span>
+          <button className="secondary-button" type="button" onClick={() => void catalog.refetch()}>Intentar de nuevo</button>
+        </div>
+      ) : filteredProducts.length ? (
+        <section className="product-grid reseller-catalog-grid">
+          {filteredProducts.map((product) => {
+            const item = itemByProductId.get(product._id);
+            const category = typeof product.categoryId === "object" ? product.categoryId?.name ?? "Sin categoría" : "Sin categoría";
+            const primaryImage = product.images?.find((image) => image.isPrimary) ?? product.images?.[0];
+            const margin = item ? item.sellingPrice - product.wholesalePrice : Number(priceDraft) - product.wholesalePrice;
+            const catalogVariantPrices = new Map((item?.variantPrices ?? []).map((entry) => [entry.variantId, entry.sellingPrice]));
+            const isEditing = editingProductId === product._id;
+
+            return (
+              <article className="product-card reseller-catalog-card" key={product._id}>
+                <div className="product-card-image reseller-catalog-image">
+                  {primaryImage ? (
+                    <img src={primaryImage.url} alt={primaryImage.alt || product.title} loading="lazy" decoding="async" />
+                  ) : (
+                    <Package size={30} />
+                  )}
+                  <span className={product.availableStock > 0 ? "catalog-stock available" : "catalog-stock unavailable"}>
+                    {product.availableStock > 0 ? "Disponible · " + product.availableStock : "Agotado"}
+                  </span>
+                </div>
+                <div className="product-card-body reseller-catalog-card-body">
+                  <span className="product-category">{category}</span>
+                  <h2>{product.title}</h2>
+                  <div className="product-sku">SKU {product.sku}</div>
+
+                  <div className="reseller-catalog-prices">
+                    <div>
+                      <span>Precio mayorista</span>
+                      <strong>{money(product.wholesalePrice)}</strong>
+                    </div>
+                    {item ? (
+                      <div>
+                        <span>Tu precio</span>
+                        <strong>{money(item.sellingPrice)}</strong>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {item ? (
+                    <div className={item.sellingPrice >= product.wholesalePrice ? "catalog-margin" : "catalog-margin loss"}>
+                      <span>{item.sellingPrice >= product.wholesalePrice ? "Ganancia bruta estimada" : "Venderías por debajo del mayorista"}</span>
+                      <strong>{money(item.sellingPrice - product.wholesalePrice)}</strong>
+                    </div>
+                  ) : null}
+
+                  {item && product.variants.length > 1 ? (
+                    <div className="catalog-variant-profit-list">
+                      <span className="catalog-variant-profit-title">Ganancia estimada por variante</span>
+                      {product.variants.map((variant) => {
+                        const variantPrice = catalogVariantPrices.get(variant._id) ?? item.sellingPrice;
+                        const variantProfit = variantPrice - variant.wholesalePrice;
+                        return (
+                          <div className="catalog-variant-profit-row" key={variant._id}>
+                            <span>{variant.label}</span>
+                            <small>Costo {money(variant.wholesalePrice)} · Venta {money(variantPrice)}</small>
+                            <strong className={variantProfit >= 0 ? "" : "loss"}>{money(variantProfit)}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {isEditing ? (
+                    <form className="reseller-catalog-price-form" onSubmit={(event) => handleSavePrice(event, product, item)}>
+                      <label className="field">
+                        <span>Precio general de venta (USD)</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          inputMode="decimal"
+                          required
+                          autoFocus
+                          value={priceDraft}
+                          onChange={(event) => setPriceDraft(event.target.value)}
+                          placeholder="Ej. 29.99"
+                        />
+                      </label>
+                      {priceDraft && Number.isFinite(Number(priceDraft)) ? (
+                        <div className={margin >= 0 ? "catalog-margin preview" : "catalog-margin preview loss"}>
+                          <span>Ganancia estimada por unidad</span>
+                          <strong>{money(Number(priceDraft) - product.wholesalePrice)}</strong>
+                        </div>
+                      ) : null}
+                      {product.variants.length > 1 ? (
+                        <div className="catalog-variant-price-editor">
+                          <div>
+                            <strong>Precios por variante</strong>
+                            <small>Deja el precio general para las variantes que no quieras personalizar.</small>
+                          </div>
+                          {product.variants.map((variant) => {
+                            const raw = variantPriceDrafts[variant._id];
+                            const effectivePrice = raw === undefined || raw.trim() === "" ? Number(priceDraft) : Number(raw);
+                            const estimatedProfit = effectivePrice - variant.wholesalePrice;
+                            return (
+                              <label className="field catalog-variant-price-row" key={variant._id}>
+                                <span>{variant.label} · Costo {money(variant.wholesalePrice)}</span>
+                                <div className="catalog-variant-price-input">
+                                  <input
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    value={raw ?? ""}
+                                    onChange={(event) => setVariantPriceDrafts((current) => ({ ...current, [variant._id]: event.target.value }))}
+                                    placeholder={priceDraft || "Usar precio general"}
+                                  />
+                                  <small className={estimatedProfit >= 0 ? "" : "loss"}>Ganancia: {Number.isFinite(estimatedProfit) ? money(estimatedProfit) : "—"}</small>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      <div className="reseller-catalog-card-actions">
+                        <button className="primary-button" type="submit" disabled={saveItem.isPending}>
+                          <Check size={14} /> {saveItem.isPending ? "Guardando..." : "Guardar precio"}
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => { setEditingProductId(null); setPriceDraft(""); setVariantPriceDrafts({}); }}>
+                          <X size={14} /> Cancelar
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="reseller-catalog-card-actions">
+                      {item ? (
+                        <>
+                          <button type="button" className="product-card-action primary" onClick={() => openEditor(product, item)}>
+                            Editar precio
+                          </button>
+                          <button
+                            type="button"
+                            className="product-card-action danger"
+                            disabled={removeItem.isPending}
+                            onClick={() => {
+                              if (window.confirm("¿Quitar este producto de tu catálogo?")) {
+                                setActionError("");
+                                removeItem.mutate(item._id);
+                              }
+                            }}
+                          >
+                            <Trash2 size={14} /> Quitar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="product-card-action primary"
+                          disabled={product.availableStock <= 0}
+                          onClick={() => openEditor(product)}
+                        >
+                          <Plus size={14} /> Añadir a mi catálogo
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {item && !isEditing ? (
+                    <ShareProductActions
+                      title={product.title}
+                      description={product.description || product.title}
+                      productUrl={"/tienda/" + user.id + "/producto/" + product._id}
+                      imageUrl={primaryImage?.url}
+                    />
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <div className="panel-card dashboard-empty product-empty">
+          <div className="dashboard-empty-icon"><Package size={20} /></div>
+          <strong>{search ? "No encontramos productos" : activeTab === "mine" ? "Tu catálogo todavía está vacío" : "No hay productos disponibles"}</strong>
+          <span>
+            {search
+              ? "Prueba con otro término de búsqueda."
+              : activeTab === "mine"
+                ? "Entra en “Explorar productos”, elige un artículo disponible y define tu precio de venta."
+                : "Cuando tu proveedor publique productos con existencias, aparecerán aquí."}
+          </span>
+          {activeTab === "mine" && !search ? (
+            <button className="secondary-action" type="button" onClick={() => setActiveTab("explore")}>Explorar productos</button>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}

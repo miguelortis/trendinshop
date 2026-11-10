@@ -43,3 +43,8 @@ TrendinShop reunirá en una sola aplicación:
 6. Métodos de pago y comprobantes.
 7. Compartir catálogo y productos.
 8. Dashboard y reportes.
+
+## Environments
+
+- `main`: producción.
+- `dev`: desarrollo y Preview Deployments de Vercel.

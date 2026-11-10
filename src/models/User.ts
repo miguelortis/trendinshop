@@ -1,0 +1,28 @@
+import { model, models, Schema, type InferSchemaType } from "mongoose";
+
+const userSchema = new Schema(
+  {
+    documentId: { type: String, required: true, trim: true, unique: true, index: true },
+    firstName: { type: String, required: true, trim: true },
+    lastName: { type: String, required: true, trim: true },
+    email: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
+    passwordHash: { type: String, required: true, select: false },
+    gender: { type: String, enum: ["female", "male", "unspecified"], required: true },
+    birthDate: { type: Date, required: true },
+    phone: { type: String, required: true, trim: true },
+    storeName: { type: String, trim: true, maxlength: 80, default: "" },
+    storeDescription: { type: String, trim: true, maxlength: 300, default: "" },
+    storeWhatsApp: { type: String, trim: true, maxlength: 40, default: "" },
+    storeLogoUrl: { type: String, trim: true, default: "" },
+    storeSlug: { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 40 },
+    role: { type: String, enum: ["ADMIN", "RESELLER"], default: "RESELLER", required: true, index: true },
+    isActive: { type: Boolean, default: true, required: true, index: true },
+    sessionInvalidBefore: { type: Date, default: null },
+  },
+  { timestamps: true, versionKey: false },
+);
+
+userSchema.index({ storeSlug: 1 }, { unique: true, sparse: true });
+
+export type User = InferSchemaType<typeof userSchema>;
+export const UserModel = models.User || model("User", userSchema);

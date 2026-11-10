@@ -1,3 +1,38 @@
+import {
+  getCurrentUser,
+  loginUser,
+  logoutUser,
+  registerUser,
+  requestPasswordReset,
+  resetPassword,
+} from "@/lib/api/auth";
+import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
+import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
+import { createProduct, updateProduct } from "@/lib/api/products";
+import {
+  addResellerCatalogItem,
+  listResellerCatalog,
+  removeResellerCatalogItem,
+  updateResellerCatalogItem,
+} from "@/lib/api/reseller-catalog";
+import { adjustInventory, listInventory } from "@/lib/api/inventory";
+import { createCustomer, listCustomers, lookupCustomerByDocument, removeCustomer, updateCustomer } from "@/lib/api/customers";
+import { cancelSale, createSale, getSaleOptions, listSales } from "@/lib/api/sales";
+import { createPublicOrder, listPublicOrders, updatePublicOrder } from "@/lib/api/public-orders";
+import { listPayments, listReceivables, registerPayment } from "@/lib/api/payments";
+import { getDashboardSummary } from "@/lib/api/dashboard-summary";
+import { createPublicCartShare, getPublicCartShare, validatePublicCart } from "@/lib/api/public-carts";
+
+import { getCommercialProfile, updateCommercialProfile, uploadStoreLogo } from "@/lib/api/profile";
+import { listSupplierPayables, listSupplierPayments, registerSupplierPayment, reviewSupplierPayment } from "@/lib/api/supplier-payables";
+import { bootstrapAdmin } from "@/lib/api/setup";
+import {
+  cleanupCurrentUserPendingImages,
+  deleteBlob,
+  importImageFromUrl,
+  prepareBlobUpload,
+} from "@/lib/api/blob";
+
 type RouteContext = {
   method: string;
   segments: string[];
@@ -17,10 +52,120 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
   }
 
   if (method === "GET" && resource === "version") {
-    return Response.json({
-      name: "TrendinShop",
-      api: "0.1.0",
-    });
+    return Response.json({ name: "TrendinShop", api: "0.1.0" });
+  }
+
+  if (resource === "auth") {
+    if (method === "POST" && action === "register") return registerUser(request);
+    if (method === "POST" && action === "login") return loginUser(request);
+    if (method === "POST" && action === "password-reset-request") return requestPasswordReset(request);
+    if (method === "POST" && action === "password-reset") return resetPassword(request);
+    if (method === "GET" && action === "me") return getCurrentUser(request);
+    if (method === "POST" && action === "logout") return logoutUser();
+  }
+
+  // La validación y el intercambio de carritos son públicos; registrar un pedido requiere cuenta.
+  if (resource === "public-carts") {
+    if (method === "POST" && action === "validate") return validatePublicCart(request);
+    if (method === "POST" && action === "share") return createPublicCartShare(request);
+    if (method === "GET" && action === "share") return getPublicCartShare(request);
+  }
+  const user = await getAuthenticatedUser(request);
+  if (!user) return unauthorized();
+
+  if (resource === "dashboard-summary" && method === "GET") {
+    return getDashboardSummary(user.id, user.role);
+  }
+
+  if (resource === "profile") {
+    if (method === "GET" && !action) return getCommercialProfile(user.id);
+    if (method === "PATCH" && !action) return updateCommercialProfile(request, user.id);
+    if (method === "POST" && action === "logo") return uploadStoreLogo(request, user.id);
+  }
+
+  if (resource === "categories") {
+    if (method === "GET") return listCategories();
+    if (method === "POST") return createCategory(request, user.role);
+  }
+
+  if (resource === "catalog") {
+    if (method === "GET") return listResellerCatalog(user.id, user.role);
+    if (method === "POST" && !action) return addResellerCatalogItem(request, user.id, user.role);
+    if ((method === "PATCH" || method === "PUT") && action) {
+      return updateResellerCatalogItem(request, action, user.id, user.role);
+    }
+    if (method === "DELETE" && action) {
+      return removeResellerCatalogItem(action, user.id, user.role);
+    }
+  }
+
+  if (resource === "products") {
+    if (method === "GET" && action) return getProductById(action, user.role);
+    if (method === "GET") return listProducts(user.role);
+    if (method === "POST") return createProduct(request, user.id, user.role);
+    if (method === "PUT" && action) return updateProduct(request, action, user.id, user.role);
+  }
+
+  if (resource === "sales") {
+    if (method === "GET" && action === "options") return getSaleOptions(user.id, user.role);
+    if (method === "GET" && !action) return listSales(request, user.id, user.role);
+    if (method === "POST" && !action) return createSale(request, user.id, user.role);
+    if (method === "PATCH" && action) return cancelSale(request, action, user.id, user.role);
+  }
+
+  if (resource === "public-orders") {
+    if (method === "POST" && !action) return createPublicOrder(request, user.id);
+    if (method === "GET" && !action) return listPublicOrders(user.id, user.role);
+    if (method === "PATCH" && action) return updatePublicOrder(request, action, user.id, user.role);
+  }
+
+  if (resource === "receivables" && method === "GET") {
+    return listReceivables(request, user.id);
+  }
+
+  if (resource === "payments") {
+    if (method === "GET") return listPayments(request, user.id);
+    if (method === "POST" && !action) return registerPayment(request, user.id);
+  }
+
+  if (resource === "supplier-payables" && method === "GET") {
+    return listSupplierPayables(user.id, user.role);
+  }
+
+  if (resource === "supplier-payments") {
+    if (method === "GET") return listSupplierPayments(user.id, user.role);
+    if (method === "POST" && !action) return registerSupplierPayment(request, user.id, user.role);
+    if (method === "PATCH" && action) return reviewSupplierPayment(request, action, user.id, user.role);
+  }
+
+  if (resource === "customers") {
+    if (method === "POST" && action === "lookup") return lookupCustomerByDocument(request, user.id);
+    if (method === "GET") return listCustomers(user.id);
+    if (method === "POST" && !action) return createCustomer(request, user.id);
+    if ((method === "PUT" || method === "PATCH") && action) {
+      return updateCustomer(request, action, user.id);
+    }
+    if (method === "DELETE" && action) return removeCustomer(action, user.id);
+  }
+
+  if (resource === "inventory") {
+    if (method === "GET") return listInventory(user.role);
+    if (method === "POST" && action === "adjust") {
+      return adjustInventory(request, user.id, user.role);
+    }
+  }
+
+  if (resource === "setup" && action === "admin" && method === "POST") {
+    return bootstrapAdmin(request);
+  }
+
+  if (resource === "blob") {
+    if (action === "upload" && method === "POST") return prepareBlobUpload(request);
+    if (action === "import" && method === "POST") return importImageFromUrl(request);
+    if (action === "cleanup-pending" && method === "POST") {
+      return cleanupCurrentUserPendingImages(request);
+    }
+    if (action === "delete" && method === "POST") return deleteBlob(request);
   }
 
   return Response.json(
@@ -28,7 +173,6 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
       ok: false,
       error: "ROUTE_NOT_FOUND",
       message: "No existe una ruta para " + method + " /api/" + context.segments.join("/"),
-      action: action ?? null,
     },
     { status: 404 },
   );
