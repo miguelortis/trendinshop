@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type ChangeEvent, type DragEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export type ProductImageInput = {
   url: string;
@@ -45,6 +46,7 @@ export function ProductImageUploader({
   onChange,
   maxImages = MAX_IMAGES,
 }: ProductImageUploaderProps) {
+  const { data: user } = useCurrentUser();
   const [items, setItems] = useState<ImageItem[]>(
     value.map((image, index) => ({
       ...image,
@@ -148,6 +150,10 @@ export function ProductImageUploader({
     }
 
     setError("");
+    if (!user?.id) {
+      setError("Inicia sesión para subir imágenes.");
+      return;
+    }
     let workingItems = [...items];
 
     for (const file of imageFiles) {
@@ -184,7 +190,9 @@ export function ProductImageUploader({
           emit(optimizedItem);
         }
 
-        const blob = await upload(uploadFile.name, uploadFile, {
+        const safeFileName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const pathname = `pending/products/${user.id}/${crypto.randomUUID()}-${safeFileName}`;
+        const blob = await upload(pathname, uploadFile, {
           access: "public",
           handleUploadUrl: "/api/blob/upload",
           clientPayload: JSON.stringify({ purpose: "product-image" }),
