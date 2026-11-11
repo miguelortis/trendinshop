@@ -19,6 +19,7 @@ type ProductVariantInput = {
   stock: string;
   lowStockThreshold: string;
   options: { name: string; value: string }[];
+  images: ProductImageInput[];
 };
 
 type PricingMode = "margin" | "profit";
@@ -31,6 +32,7 @@ const blankVariant = (): ProductVariantInput => ({
   stock: "0",
   lowStockThreshold: "3",
   options: [{ name: "", value: "" }],
+  images: [],
 });
 
 function makeSku(title: string) {
@@ -240,6 +242,7 @@ export default function NewProductPage() {
         variants: variants.map((variant) => ({
           ...variant,
           options: variant.options.filter((option) => option.name.trim() && option.value.trim()),
+          images: variant.images,
         })),
       });
 
@@ -549,6 +552,23 @@ export default function NewProductPage() {
                       <span>Alerta cuando queden</span>
                       <input type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariantField(index, "lowStockThreshold", event.target.value)} />
                     </label>
+
+                    <div className="variant-images-field">
+                      <div className="variant-options-header">
+                        <span>Imágenes de esta variante</span>
+                        <small>Si no agregas imágenes, se usarán las generales.</small>
+                      </div>
+                      <ProductImageUploader
+                        value={variant.images}
+                        onChange={(nextImages) =>
+                          setVariants((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, images: nextImages } : item,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
