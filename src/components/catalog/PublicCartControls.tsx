@@ -5,7 +5,8 @@ import { Check, Minus, Plus, ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { readPublicCart, writePublicCart } from "@/lib/public-cart-client";
 
-type Variant = { id: string; label: string; stock: number; sellingPrice?: number };
+type ProductImage = { url: string; alt?: string; isPrimary?: boolean };
+type Variant = { id: string; label: string; stock: number; sellingPrice?: number; images?: ProductImage[] };
 type Props = {
   resellerId: string;
   storeSlug: string;
@@ -13,6 +14,7 @@ type Props = {
   productTitle: string;
   sellingPrice: number;
   variants: Variant[];
+  productImages: ProductImage[];
 };
 
 function money(value: number) {
@@ -20,14 +22,17 @@ function money(value: number) {
 }
 
 export function PublicCartControls({
-  resellerId, storeSlug, productId, productTitle, sellingPrice, variants,
+  resellerId, storeSlug, productId, productTitle, sellingPrice, variants, productImages,
 }: Props) {
   const availableVariants = variants.filter((variant) => variant.stock > 0);
   const [variantId, setVariantId] = useState(availableVariants[0]?.id ?? "");
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState("");
   const [justAdded, setJustAdded] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const variant = availableVariants.find((item) => item.id === variantId);
+  const galleryImages = variant?.images?.length ? variant.images : productImages;
+  const activeGalleryImage = galleryImages.find((image) => image.isPrimary) ?? galleryImages[selectedImageIndex] ?? galleryImages[0];
 
   function addItem() {
     if (!variant || quantity < 1 || quantity > Math.min(100, variant.stock)) {
@@ -57,10 +62,36 @@ export function PublicCartControls({
 
   return (
     <div className="public-cart-controls">
+      <div className="public-product-gallery">
+        {activeGalleryImage ? (
+          <img src={activeGalleryImage.url} alt={activeGalleryImage.alt || productTitle} />
+        ) : (
+          <div className="public-catalog-image-placeholder public-product-no-image"><span>T</span></div>
+        )}
+        {galleryImages.length > 1 ? (
+          <div className="public-product-thumbnails">
+            {galleryImages.map((image, index) => (
+              <button
+                type="button"
+                key={image.url}
+                className={image.url === activeGalleryImage?.url ? "public-product-thumbnail active" : "public-product-thumbnail"}
+                onClick={() => setSelectedImageIndex(index)}
+                aria-label={"Ver imagen " + (index + 1)}
+              >
+                <img src={image.url} alt={image.alt || productTitle} />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="public-product-image-count">
+          {variant?.images?.length ? "Imágenes de esta variante" : "Imágenes del producto"}
+        </div>
+      </div>
       <label className="public-order-field">
         <span>Variante</span>
         <select value={variantId} onChange={(event) => {
           setVariantId(event.target.value);
+          setSelectedImageIndex(0);
           setQuantity(1);
           setJustAdded(false);
           setNotice("");
