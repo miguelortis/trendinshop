@@ -44,14 +44,14 @@ export function PublicCartControls({
 }: Props) {
   const availableVariants = useMemo(() => variants.filter((variant) => variant.stock > 0), [variants]);
   const optionNames = useMemo(() => Array.from(new Set(
-    availableVariants.flatMap((variant) => (variant.options ?? []).map((option) => option.name.trim()).filter(Boolean)),
-  )), [availableVariants]);
+    variants.flatMap((variant) => (variant.options ?? []).map((option) => option.name.trim()).filter(Boolean)),
+  )), [variants]);
   const optionValues = useMemo(() => Object.fromEntries(optionNames.map((name) => [
     name,
-    Array.from(new Set(availableVariants.flatMap((variant) =>
+    Array.from(new Set(variants.flatMap((variant) =>
       (variant.options ?? []).filter((option) => option.name.trim() === name).map((option) => option.value.trim()),
     ))),
-  ])), [availableVariants, optionNames]);
+  ])), [variants, optionNames]);
 
   const [selection, setSelection] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
