@@ -252,44 +252,35 @@ export default async function PublicProductPage({ params }: PageProps) {
         </nav>
 
         <section className="public-product-layout public-product-layout-variant">
-          <div className="public-product-information">
-            <span className="public-catalog-kicker">{product.category}</span>
-            <h1>{product.title}</h1>
-            <p className="public-product-seller">Publicado por <strong>{sellerName}</strong></p>
-            {data.sellerDescription ? <p className="public-product-seller-description">{data.sellerDescription}</p> : null}
-            <div className="public-product-price">{maxVariantPrice > displayPrice ? "Desde " + money(displayPrice) : money(displayPrice)}</div>
-            <span className={product.available ? "public-product-availability available" : "public-product-availability unavailable"}>
-              {product.available ? "Disponible para pedir" : "Agotado por el momento"}
-            </span>
-
-            {product.description ? <p className="public-product-description">{product.description}</p> : null}
-
-            <PublicCartControls
-              resellerId={data.sellerId}
-              storeSlug={data.sellerSlug}
-              productId={product.id}
-              productTitle={product.title}
-              sellingPrice={product.sellingPrice}
-              variants={product.variants}
-              productImages={product.images}
-            />
-
-            <div className="public-product-share-panel">
-              <strong>Comparte este producto</strong>
-              <p>Comparte la imagen y el enlace cuando tu dispositivo lo permita, o envía el enlace por WhatsApp.</p>
-              <ShareProductActions
-                title={product.title}
-                description={shareDescription}
-                productUrl={shareUrl}
-                imageUrl={primaryImage?.url}
-              />
-            </div>
-
-            <Link href={"/tienda/" + resellerId} className="public-product-back-link">
-              ← Volver al catálogo de {sellerName}
-            </Link>
-          </div>
+          <PublicCartControls
+            resellerId={data.sellerId}
+            storeSlug={data.sellerSlug}
+            productId={product.id}
+            productTitle={product.title}
+            category={product.category}
+            description={product.description}
+            sellerName={sellerName}
+            sellerDescription={data.sellerDescription}
+            sellingPrice={product.sellingPrice}
+            variants={product.variants}
+            productImages={product.images}
+          />
         </section>
+
+        <div className="public-product-share-panel public-product-share-panel-below">
+          <strong>Comparte este producto</strong>
+          <p>Comparte la imagen y el enlace cuando tu dispositivo lo permita, o envía el enlace por WhatsApp.</p>
+          <ShareProductActions
+            title={product.title}
+            description={shareDescription}
+            productUrl={shareUrl}
+            imageUrl={primaryImage?.url}
+          />
+        </div>
+
+        <Link href={"/tienda/" + resellerId} className="public-product-back-link">
+          ← Volver al catálogo de {sellerName}
+        </Link>
 
         <footer className="public-catalog-footer">
           <span>Catálogo creado con <strong>TrendinShop</strong></span>
