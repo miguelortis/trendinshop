@@ -372,6 +372,15 @@ export async function createProduct(
       userId,
       productId.toString(),
     );
+    const promotedVariantImages = await Promise.all(
+      variants.map((variant, index) =>
+        promoteProductImages(
+          variant.images,
+          userId,
+          productId.toString() + "/variants/" + index,
+        ),
+      ),
+    );
 
     const product = await ProductModel.create({
       _id: productId,
@@ -389,10 +398,11 @@ export async function createProduct(
 
     try {
       const createdVariants = await ProductVariantModel.insertMany(
-        variants.map((variant) => ({
+        variants.map((variant, index) => ({
           productId: product._id,
           label: variant.label,
           options: variant.options,
+          images: promotedVariantImages[index].images,
           sku: variant.sku,
           purchasePrice: variant.purchasePrice,
           wholesalePrice: variant.wholesalePrice,
@@ -416,9 +426,13 @@ export async function createProduct(
         await InventoryMovementModel.insertMany(initialMovements);
       }
 
-      if (promotedImages.pendingUrls.length) {
+      const allPendingImageUrls = [
+        ...promotedImages.pendingUrls,
+        ...promotedVariantImages.flatMap((item) => item.pendingUrls),
+      ];
+      if (allPendingImageUrls.length) {
         try {
-          await del(promotedImages.pendingUrls);
+          await del(allPendingImageUrls);
         } catch (cleanupError) {
           console.error("[PRODUCT_PENDING_IMAGE_CLEANUP]", cleanupError);
         }
@@ -437,9 +451,13 @@ export async function createProduct(
       await ProductVariantModel.deleteMany({ productId: product._id });
       await ProductModel.deleteOne({ _id: product._id });
 
-      if (promotedImages.permanentUrls.length) {
+      const allPermanentImageUrls = [
+        ...promotedImages.permanentUrls,
+        ...promotedVariantImages.flatMap((item) => item.permanentUrls),
+      ];
+      if (allPermanentImageUrls.length) {
         try {
-          await del(promotedImages.permanentUrls);
+          await del(allPermanentImageUrls);
         } catch (cleanupError) {
           console.error("[PRODUCT_IMAGE_ROLLBACK_CLEANUP]", cleanupError);
         }
