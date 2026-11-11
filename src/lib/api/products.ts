@@ -686,6 +686,24 @@ export async function updateProduct(
       alt: image.alt,
       isPrimary: image.isPrimary,
     }));
+    const preparedVariantImages = new Map<string, Awaited<ReturnType<typeof prepareEditedProductImages>>>();
+    for (const [index, variant] of variants.entries()) {
+      const existing = variant._id ? variantsById.get(variant._id) : undefined;
+      const currentVariantImages = (existing?.images ?? []).map((image: any) => ({
+        url: image.url,
+        alt: image.alt ?? "",
+        isPrimary: image.isPrimary ?? false,
+      }));
+      const key = variant._id || "new-" + index;
+      const prepared = await prepareEditedProductImages(
+        variant.images,
+        currentVariantImages,
+        userId,
+        product._id.toString() + "/variants/" + key,
+      );
+      preparedVariantImages.set(key, prepared);
+      promotedImageUrls.push(...prepared.newPermanentUrls);
+    }
     const preparedImages = await prepareEditedProductImages(
       images,
       currentImages,
@@ -729,6 +747,7 @@ export async function updateProduct(
         const oldStock = existing.stock;
         existing.label = variant.label;
         existing.options = variant.options;
+        existing.images = preparedVariantImages.get(variant._id)!.images;
         existing.sku = variant.sku;
         existing.purchasePrice = variant.purchasePrice;
         existing.wholesalePrice = variant.wholesalePrice;
@@ -752,6 +771,7 @@ export async function updateProduct(
           productId: product._id,
           label: variant.label,
           options: variant.options,
+          images: preparedVariantImages.get("new-" + variants.indexOf(variant))!.images,
           sku: variant.sku,
           purchasePrice: variant.purchasePrice,
           wholesalePrice: variant.wholesalePrice,
@@ -769,6 +789,15 @@ export async function updateProduct(
             performedBy: userId,
           });
         }
+      }
+    }
+
+    const allVariantPendingUrls = Array.from(preparedVariantImages.values()).flatMap((item) => item.pendingUrls);
+    if (allVariantPendingUrls.length) {
+      try {
+        await del(allVariantPendingUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_VARIANT_PENDING_IMAGE_CLEANUP]", cleanupError);
       }
     }
 
