@@ -73,7 +73,7 @@ type PublicProductData = {
     images: ProductImageRecord[];
     sellingPrice: number;
     available: boolean;
-    variants: { id: string; label: string; stock: number; sellingPrice: number; images: ProductImageRecord[] }[];
+    variants: { id: string; label: string; stock: number; sellingPrice: number; options: { name: string; value: string }[]; images: ProductImageRecord[] }[];
   };
 };
 
@@ -168,6 +168,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
         id: String(variant._id),
         label: variantLabel(variant),
         stock: variant.stock,
+        options: variant.options ?? [],
         images: (variant.images ?? []).map((image) => ({ ...image, url: safeImageUrl(image.url) })).filter((image) => Boolean(image.url)),
         sellingPrice: catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice,
       })),
