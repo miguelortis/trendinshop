@@ -265,6 +265,7 @@ export async function createProduct(
         stock: Number(body.stock ?? 0),
         lowStockThreshold: Number(body.lowStockThreshold ?? 3),
         options: [],
+        images: [],
       });
     }
 
