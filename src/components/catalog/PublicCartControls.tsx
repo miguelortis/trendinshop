@@ -29,10 +29,11 @@ export function PublicCartControls({
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState("");
   const [justAdded, setJustAdded] = useState(false);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const variant = availableVariants.find((item) => item.id === variantId);
   const galleryImages = variant?.images?.length ? variant.images : productImages;
-  const activeGalleryImage = galleryImages.find((image) => image.isPrimary) ?? galleryImages[selectedImageIndex] ?? galleryImages[0];
+  const primaryGalleryIndex = Math.max(0, galleryImages.findIndex((image) => image.isPrimary));
+  const activeGalleryImage = galleryImages[selectedImageIndex ?? primaryGalleryIndex] ?? galleryImages[0];
 
   function addItem() {
     if (!variant || quantity < 1 || quantity > Math.min(100, variant.stock)) {
@@ -91,7 +92,7 @@ export function PublicCartControls({
         <span>Variante</span>
         <select value={variantId} onChange={(event) => {
           setVariantId(event.target.value);
-          setSelectedImageIndex(0);
+          setSelectedImageIndex(null);
           setQuantity(1);
           setJustAdded(false);
           setNotice("");
