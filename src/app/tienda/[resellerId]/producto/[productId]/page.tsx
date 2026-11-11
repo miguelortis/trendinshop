@@ -55,6 +55,7 @@ type VariantRecord = {
   label: string;
   options?: { name: string; value: string }[];
   stock: number;
+  images?: ProductImageRecord[];
 };
 
 type PublicProductData = {
@@ -72,7 +73,7 @@ type PublicProductData = {
     images: ProductImageRecord[];
     sellingPrice: number;
     available: boolean;
-    variants: { id: string; label: string; stock: number; sellingPrice: number }[];
+    variants: { id: string; label: string; stock: number; sellingPrice: number; images: ProductImageRecord[] }[];
   };
 };
 
@@ -138,7 +139,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     : null;
 
   const variants = await ProductVariantModel.find({ productId: product._id, isActive: true })
-    .select("_id label options stock")
+    .select("_id label options stock images")
     .lean() as unknown as VariantRecord[];
 
   const availableVariants = variants.filter((variant) => variant.stock > 0);
@@ -167,6 +168,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
         id: String(variant._id),
         label: variantLabel(variant),
         stock: variant.stock,
+        images: (variant.images ?? []).map((image) => ({ ...image, url: safeImageUrl(image.url) })).filter((image) => Boolean(image.url)),
         sellingPrice: catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice,
       })),
     },
@@ -280,6 +282,7 @@ export default async function PublicProductPage({ params }: PageProps) {
               productTitle={product.title}
               sellingPrice={product.sellingPrice}
               variants={product.variants}
+              productImages={product.images}
             />
 
             <div className="public-product-share-panel">
