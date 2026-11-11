@@ -23,6 +23,7 @@ type ParsedProductVariant = {
   stock: number;
   lowStockThreshold: number;
   options: { name: string; value: string }[];
+  images: ProductImageData[];
 };
 
 function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
@@ -202,6 +203,7 @@ function parseVariants(value: unknown): ParsedProductVariant[] {
       stock: Number(item.stock ?? 0),
       lowStockThreshold: Number(item.lowStockThreshold ?? 3),
       options,
+      images: parseImages(item.images, text(item.label) || "Imagen de variante"),
     };
   });
 }
