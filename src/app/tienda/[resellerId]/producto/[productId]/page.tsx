@@ -251,7 +251,7 @@ export default async function PublicProductPage({ params }: PageProps) {
           <span>{product.title}</span>
         </nav>
 
-        <section className="public-product-layout">
+        <section className="public-product-layout public-product-layout-variant">
           <div className="public-product-information">
             <span className="public-catalog-kicker">{product.category}</span>
             <h1>{product.title}</h1>
