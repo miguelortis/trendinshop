@@ -252,17 +252,6 @@ export default async function PublicProductPage({ params }: PageProps) {
         </nav>
 
         <section className="public-product-layout">
-          <div className="public-product-gallery">
-            {primaryImage ? (
-              <img src={primaryImage.url} alt={primaryImage.alt || product.title} />
-            ) : (
-              <div className="public-catalog-image-placeholder public-product-no-image"><span>T</span></div>
-            )}
-            {product.images.length > 1 ? (
-              <div className="public-product-image-count">{product.images.length} imágenes del producto</div>
-            ) : null}
-          </div>
-
           <div className="public-product-information">
             <span className="public-catalog-kicker">{product.category}</span>
             <h1>{product.title}</h1>
