@@ -10,6 +10,7 @@ import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
+import { ResellerComboModel } from "@/models/ResellerCombo";
 import { SaleModel } from "@/models/Sale";
 import { SalePaymentModel } from "@/models/SalePayment";
 import { ResellerSupplierPaymentModel } from "@/models/ResellerSupplierPayment";
@@ -657,6 +658,18 @@ export async function createSale(request: Request, userId: string, userRole: str
 
       if (products.length !== productIds.length) {
         fail("Uno de los productos ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
+      }
+
+      const comboIds = [...new Set(effectiveLines.flatMap((line) => line.comboId ? [line.comboId] : []))];
+      if (comboIds.length) {
+        const activeCombos = await ResellerComboModel.find({
+          _id: { $in: comboIds },
+          resellerId: userId,
+          isActive: true,
+        }).session(transactionSession).select("_id").lean();
+        if (activeCombos.length !== comboIds.length) {
+          fail("Uno de los combos ya no está activo en tu catálogo.", 409, "COMBO_NOT_AVAILABLE");
+        }
       }
 
       const productById = new Map<string, ProductRecord>();
