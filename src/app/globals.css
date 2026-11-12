@@ -3702,3 +3702,61 @@ button, input, select, textarea { font: inherit; }
   .public-product-detail-panel .public-cart-add-button { width: 100%; min-height: 50px; }
   .public-product-share-panel-below { margin-top: 20px; }
 }
+
+
+/* Reseller product combo builder */
+.combo-builder-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: rgba(16,24,40,.58); backdrop-filter: blur(5px); }
+.combo-builder-dialog { width: min(760px,100%); max-height: min(92dvh,900px); overflow: auto; padding: 24px; border: 1px solid #eaecf0; border-radius: 20px; background: #fff; box-shadow: 0 24px 80px rgba(16,24,40,.28); display: grid; gap: 18px; }
+.combo-builder-header,.reseller-combos-heading,.combo-builder-section-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+.combo-builder-header h2,.reseller-combos-heading h2 { margin:4px 0; color:#101828; font-size:24px; }
+.combo-builder-header p { max-width:570px; margin:5px 0 0; color:#667085; font-size:13px; line-height:1.5; }
+.combo-builder-section-heading { align-items:center; color:#344054; font-size:13px; }
+.combo-builder-section-heading span,.reseller-combos-heading h2 small { color:#6941c6; font-weight:800; }
+.combo-builder-selection { display:grid; gap:10px; padding:14px; border:1px solid #eaecf0; border-radius:13px; background:#fafaff; }
+.combo-builder-selected-list { display:flex; flex-wrap:wrap; gap:7px; min-height:24px; align-items:center; }
+.combo-builder-selected-list small { color:#98a2b3; }
+.combo-builder-chip { display:inline-flex; align-items:center; gap:7px; border:1px solid #d9d6fe; border-radius:999px; padding:6px 10px; color:#53389e; background:#f4f3ff; font-size:12px; font-weight:700; cursor:pointer; }
+.combo-builder-search { width:100%; }
+.combo-builder-product-list { display:grid; gap:7px; max-height:300px; overflow:auto; padding-right:4px; }
+.combo-builder-product { display:grid; grid-template-columns:22px 52px minmax(0,1fr) auto; align-items:center; gap:11px; width:100%; padding:9px; border:1px solid #eaecf0; border-radius:12px; background:#fff; text-align:left; cursor:pointer; }
+.combo-builder-product:hover:not(:disabled),.combo-builder-product.selected { border-color:#9b8afb; background:#faf9ff; }
+.combo-builder-product:disabled { opacity:.45; cursor:not-allowed; }
+.combo-builder-check { display:grid; place-items:center; width:20px; height:20px; border:1px solid #d0d5dd; border-radius:6px; color:#fff; }
+.combo-builder-check.checked { border-color:#6941c6; background:#6941c6; }
+.combo-builder-product-image { display:grid; place-items:center; width:52px; height:52px; overflow:hidden; border-radius:9px; background:#f2f4f7; color:#98a2b3; }
+.combo-builder-product-image img { width:100%; height:100%; object-fit:contain; }
+.combo-builder-product-copy { display:grid; gap:4px; min-width:0; }
+.combo-builder-product-copy strong { overflow:hidden; color:#344054; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.combo-builder-product-copy small,.combo-builder-product-price { color:#667085; font-size:11px; }
+.combo-builder-product-price { white-space:nowrap; }
+.combo-builder-form { display:grid; gap:12px; padding-top:3px; }
+.combo-builder-profit-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.combo-builder-price-preview { display:grid; gap:4px; padding:13px; border:1px solid #d9d6fe; border-radius:12px; background:#faf9ff; }
+.combo-builder-price-preview span,.combo-builder-price-preview small { color:#667085; font-size:12px; }
+.combo-builder-price-preview strong { color:#53389e; font-size:20px; }
+.combo-builder-actions { display:flex; justify-content:flex-end; gap:9px; padding-top:5px; }
+.reseller-combos-section { display:grid; gap:14px; margin-top:32px; }
+.reseller-combos-heading { align-items:center; }
+.reseller-combos-heading h2 { font-size:21px; }
+.reseller-combos-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(245px,1fr)); gap:15px; }
+.reseller-combo-card { display:grid; align-content:start; gap:12px; padding:14px; border:1px solid #eaecf0; border-radius:15px; background:#fff; }
+.reseller-combo-images { position:relative; display:grid; grid-template-columns:repeat(5,1fr); gap:5px; min-height:84px; align-items:center; }
+.reseller-combo-images > span:not(.reseller-combo-mark) { display:grid; place-items:center; height:75px; overflow:hidden; border-radius:9px; background:#f8f9fc; }
+.reseller-combo-images img { width:100%; height:100%; object-fit:contain; }
+.reseller-combo-mark { position:absolute; top:0; left:0; display:inline-flex; align-items:center; gap:4px; padding:5px 7px; border-radius:7px; color:#53389e; background:#f4f0ff; font-size:9px; font-weight:900; }
+.reseller-combo-card-copy { display:grid; gap:6px; }
+.reseller-combo-card-copy h3 { margin:0; color:#101828; font-size:16px; }
+.reseller-combo-card-copy p { margin:0; color:#667085; font-size:12px; line-height:1.5; }
+.reseller-combo-card-copy strong { color:#53389e; font-size:18px; }
+@media (max-width:640px) {
+  .combo-builder-backdrop { padding:0; align-items:end; }
+  .combo-builder-dialog { width:100%; max-height:94dvh; padding:18px 15px calc(18px + env(safe-area-inset-bottom)); border-radius:20px 20px 0 0; }
+  .combo-builder-header h2 { font-size:21px; }
+  .combo-builder-product { grid-template-columns:20px 44px minmax(0,1fr); gap:8px; }
+  .combo-builder-product-image { width:44px; height:44px; }
+  .combo-builder-product-price { grid-column:3; }
+  .combo-builder-profit-grid { grid-template-columns:1fr; }
+  .combo-builder-actions { flex-direction:column-reverse; }
+  .combo-builder-actions button { width:100%; justify-content:center; }
+  .reseller-combos-heading { align-items:flex-start; flex-direction:column; }
+}
