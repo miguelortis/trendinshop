@@ -187,7 +187,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     }];
   });
 
-  const combosForCatalog = (resellerCombos as any[]).flatMap((combo) => {
+  const combosForCatalog = (resellerCombos as any[]).flatMap((combo: any) => {
     const components = (combo.components ?? []).flatMap((component: any) => {
       const id = String(component.productId);
       const product = productById.get(id);
@@ -204,15 +204,15 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       }];
     });
     if (components.length !== (combo.components ?? []).length) return [];
-    const available = components.every((component) => component.variants.length > 0);
-    const minBase = components.reduce((sum, component) =>
-      sum + Math.min(...component.variants.map((variant) => variant.wholesalePrice)) * component.quantity, 0);
-    const maxBase = components.reduce((sum, component) =>
-      sum + Math.max(...component.variants.map((variant) => variant.wholesalePrice)) * component.quantity, 0);
+    const available = components.every((component: any) => component.variants.length > 0);
+    const minBase = components.reduce((sum: number, component: any) =>
+      sum + Math.min(...component.variants.map((variant: any) => variant.wholesalePrice)) * component.quantity, 0);
+    const maxBase = components.reduce((sum: number, component: any) =>
+      sum + Math.max(...component.variants.map((variant: any) => variant.wholesalePrice)) * component.quantity, 0);
     const applyProfit = (base: number) => Number((combo.profitMode === "PERCENT"
       ? base * (1 + Number(combo.profitValue) / 100)
       : base + Number(combo.profitValue)).toFixed(2));
-    const images = components.flatMap((component) => component.images.slice(0, 1));
+    const images = components.flatMap((component: any) => component.images.slice(0, 1));
     return [{
       id: String(combo._id), title: combo.title, description: combo.description ?? "",
       available, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
