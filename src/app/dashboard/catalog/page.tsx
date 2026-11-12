@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, ExternalLink, Package, Plus, Search, ShoppingBag, Trash2, X } from "lucide-react";
+import { Check, Copy, ExternalLink, Layers, Package, Plus, Search, ShoppingBag, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
@@ -31,6 +31,11 @@ type CatalogResponse = {
   products: CatalogProduct[];
   items: CatalogItem[];
 };
+type CatalogCombo = {
+  _id: string; title: string; description: string; profitMode: "FIXED" | "PERCENT"; profitValue: number;
+  components: { productId: string; quantity: number; product: { title: string; wholesalePrice: number; images: { url: string; alt?: string; isPrimary?: boolean }[] }; variants: { _id: string; stock: number; wholesalePrice: number }[] }[];
+};
+type CombosResponse = { ok: true; combos: CatalogCombo[] };
 type SavePayload = {
   productId: string;
   itemId?: string;
@@ -60,10 +65,17 @@ export default function ResellerCatalogPage() {
   const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [comboBuilderOpen, setComboBuilderOpen] = useState(false);
+  const [comboSearch, setComboSearch] = useState("");
+  const [comboSelection, setComboSelection] = useState<string[]>([]);
+  const [comboTitle, setComboTitle] = useState("");
+  const [comboDescription, setComboDescription] = useState("");
+  const [comboProfitMode, setComboProfitMode] = useState<"FIXED" | "PERCENT">("FIXED");
+  const [comboProfitValue, setComboProfitValue] = useState("5");
 
   const catalog = useQuery({
     queryKey: ["reseller-catalog"],
-    enabled: user?.role === "RESELLER",
+    enabled: user?.role === "RESELLER" || user?.role === "ADMIN",
     queryFn: async () => (await api.get<CatalogResponse>("/catalog")).data,
   });
 
@@ -85,6 +97,55 @@ export default function ResellerCatalogPage() {
         return [product.title, product.sku, category].join(" ").toLowerCase().includes(term);
       });
   }, [activeTab, catalog.data?.products, itemByProductId, search]);
+
+  const combos = useQuery({
+    queryKey: ["reseller-combos"],
+    enabled: user?.role === "RESELLER" || user?.role === "ADMIN",
+    queryFn: async () => (await api.get<CombosResponse>("/combos")).data,
+  });
+  const comboProducts = useMemo(() => {
+    const term = comboSearch.trim().toLowerCase();
+    return (catalog.data?.products ?? []).filter((product) => product.availableStock > 0)
+      .filter((product) => !term || [product.title, product.sku].join(" ").toLowerCase().includes(term));
+  }, [catalog.data?.products, comboSearch]);
+  const selectedComboProducts = useMemo(
+    () => comboSelection.flatMap((id) => {
+      const product = catalog.data?.products.find((item) => item._id === id);
+      return product ? [product] : [];
+    }),
+    [comboSelection, catalog.data?.products],
+  );
+  const createCombo = useMutation({
+    mutationFn: async () => api.post("/combos", {
+      title: comboTitle, description: comboDescription, profitMode: comboProfitMode,
+      profitValue: Number(comboProfitValue),
+      components: comboSelection.map((productId) => ({ productId, quantity: 1 })),
+    }),
+    onSuccess: async () => {
+      setComboBuilderOpen(false); setComboSelection([]); setComboSearch(""); setComboTitle("");
+      setComboDescription(""); setComboProfitMode("FIXED"); setComboProfitValue("5");
+      setActionError("");
+      await queryClient.invalidateQueries({ queryKey: ["reseller-combos"] });
+    },
+    onError: (error: unknown) => setActionError(errorMessage(error)),
+  });
+  const removeCombo = useMutation({
+    mutationFn: async (comboId: string) => api.delete("/combos/" + comboId),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["reseller-combos"] }); },
+    onError: (error: unknown) => setActionError(errorMessage(error)),
+  });
+  function openComboBuilder(initialProductId?: string) {
+    setActionError(""); setComboSelection(initialProductId ? [initialProductId] : []);
+    setComboSearch(""); setComboBuilderOpen(true);
+  }
+  function toggleComboProduct(productId: string) {
+    setComboSelection((current) => current.includes(productId)
+      ? current.filter((id) => id !== productId)
+      : current.length < 5 ? [...current, productId] : current);
+  }
+  function comboSellingPrice(base: number, mode: "FIXED" | "PERCENT", value: number) {
+    return Number((mode === "PERCENT" ? base * (1 + value / 100) : base + value).toFixed(2));
+  }
 
   const saveItem = useMutation({
     mutationFn: async ({ productId, itemId, sellingPrice, variantPrices }: SavePayload) => {
@@ -183,9 +244,10 @@ export default function ResellerCatalogPage() {
         <div>
           <span className="page-kicker">Venta personalizada</span>
           <h1>Mi catálogo</h1>
-          <p>Selecciona productos disponibles y define el precio al que los ofrecerás a tus clientes.</p>
+          <p>Agrega productos individuales o agrupa varios para crear combos personalizables.</p>
         </div>
         <div className="reseller-catalog-heading-actions">
+          <button type="button" className="product-card-action" onClick={() => openComboBuilder()}><Layers size={14} /> Crear combo</button>
           <Link
             href={"/tienda/" + user.id}
             target="_blank"
@@ -382,6 +444,7 @@ export default function ResellerCatalogPage() {
                     </form>
                   ) : (
                     <div className="reseller-catalog-card-actions">
+                      <button type="button" className="product-card-action" onClick={() => openComboBuilder(product._id)}><Layers size={14} /> Agrupar</button>
                       {item ? (
                         <>
                           <button type="button" className="product-card-action primary" onClick={() => openEditor(product, item)}>
@@ -442,6 +505,90 @@ export default function ResellerCatalogPage() {
           ) : null}
         </div>
       )}
+
+      {comboBuilderOpen ? (
+        <div className="combo-builder-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !createCombo.isPending) setComboBuilderOpen(false);
+        }}>
+          <section className="combo-builder-dialog" role="dialog" aria-modal="true" aria-labelledby="combo-builder-title">
+            <header className="combo-builder-header">
+              <div><span className="page-kicker">Publicación agrupada</span><h2 id="combo-builder-title">Crear combo</h2><p>Selecciona de 2 a 5 productos del catálogo general. No necesitas publicarlos individualmente.</p></div>
+              <button type="button" className="product-card-action" onClick={() => setComboBuilderOpen(false)} disabled={createCombo.isPending} aria-label="Cerrar"><X size={16}/></button>
+            </header>
+            <div className="combo-builder-selection">
+              <div className="combo-builder-section-heading"><strong>Seleccionados</strong><span>{comboSelection.length} / 5</span></div>
+              <div className="combo-builder-selected-list">
+                {selectedComboProducts.map((product) => <button type="button" className="combo-builder-chip" key={product._id} onClick={() => toggleComboProduct(product._id)}>{product.title}<X size={13}/></button>)}
+                {!selectedComboProducts.length ? <small>Aún no has seleccionado productos.</small> : null}
+              </div>
+            </div>
+            <label className="search-field combo-builder-search"><Search size={16}/><input value={comboSearch} onChange={(event) => setComboSearch(event.target.value)} placeholder="Buscar productos por nombre o SKU..." /></label>
+            <div className="combo-builder-product-list">
+              {comboProducts.map((product) => {
+                const selected = comboSelection.includes(product._id);
+                const image = product.images?.find((entry) => entry.isPrimary) ?? product.images?.[0];
+                return <button type="button" key={product._id} className={"combo-builder-product" + (selected ? " selected" : "")} onClick={() => toggleComboProduct(product._id)} disabled={!selected && comboSelection.length >= 5}>
+                  <span className={"combo-builder-check" + (selected ? " checked" : "")}>{selected ? <Check size={14}/> : null}</span>
+                  <span className="combo-builder-product-image">{image ? <img src={image.url} alt={image.alt || product.title}/> : <Package size={20}/>}</span>
+                  <span className="combo-builder-product-copy"><strong>{product.title}</strong><small>SKU {product.sku} · {product.availableStock} disponibles</small></span>
+                  <strong className="combo-builder-product-price">{money(product.wholesalePrice)}</strong>
+                </button>;
+              })}
+              {!comboProducts.length ? <small>No hay productos disponibles que coincidan con la búsqueda.</small> : null}
+            </div>
+            <div className="combo-builder-form">
+              <label className="field"><span>Nombre del combo *</span><input value={comboTitle} onChange={(event) => setComboTitle(event.target.value)} maxLength={100} placeholder="Ej. Combo de destapadores"/></label>
+              <label className="field"><span>Descripción</span><textarea value={comboDescription} onChange={(event) => setComboDescription(event.target.value)} maxLength={1000} rows={2} placeholder="Describe qué incluye..."/></label>
+              <div className="combo-builder-profit-grid">
+                <label className="field"><span>Tipo de ganancia</span><select value={comboProfitMode} onChange={(event) => setComboProfitMode(event.target.value as "FIXED" | "PERCENT")}><option value="FIXED">Importe fijo</option><option value="PERCENT">Porcentaje</option></select></label>
+                <label className="field"><span>{comboProfitMode === "FIXED" ? "Ganancia (USD)" : "Ganancia (%)"}</span><input type="number" min="0.01" max={comboProfitMode === "PERCENT" ? "500" : "100000"} step="0.01" value={comboProfitValue} onChange={(event) => setComboProfitValue(event.target.value)}/></label>
+              </div>
+              {selectedComboProducts.length >= 2 ? (() => {
+                const minimum = selectedComboProducts.reduce((sum, product) => {
+                  const costs = product.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
+                  return sum + (costs.length ? Math.min(...costs) : product.wholesalePrice);
+                }, 0);
+                const maximum = selectedComboProducts.reduce((sum, product) => {
+                  const costs = product.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
+                  return sum + (costs.length ? Math.max(...costs) : product.wholesalePrice);
+                }, 0);
+                return <div className="combo-builder-price-preview"><span>Precio estimado</span><strong>{money(comboSellingPrice(minimum, comboProfitMode, Number(comboProfitValue) || 0))} – {money(comboSellingPrice(maximum, comboProfitMode, Number(comboProfitValue) || 0))}</strong><small>El precio final se ajustará a las variantes que el cliente seleccione.</small></div>;
+              })() : null}
+              {createCombo.isError ? <p className="auth-error">{errorMessage(createCombo.error)}</p> : null}
+              <div className="combo-builder-actions">
+                <button type="button" className="secondary-button" onClick={() => setComboBuilderOpen(false)} disabled={createCombo.isPending}>Cancelar</button>
+                <button type="button" className="primary-button" onClick={() => createCombo.mutate()} disabled={createCombo.isPending || comboSelection.length < 2 || !comboTitle.trim() || !Number.isFinite(Number(comboProfitValue)) || Number(comboProfitValue) <= 0}><Layers size={15}/>{createCombo.isPending ? "Creando..." : "Crear combo"}</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <section className="reseller-combos-section">
+        <div className="reseller-combos-heading"><div><span className="page-kicker">Publicaciones agrupadas</span><h2>Mis combos <small>{combos.data?.combos.length ?? 0}</small></h2></div><button type="button" className="product-card-action primary" onClick={() => openComboBuilder()}><Plus size={14}/> Crear combo</button></div>
+        {combos.isLoading ? <div className="panel-card dashboard-loading">Cargando combos...</div> : combos.data?.combos.length ? (
+          <div className="reseller-combos-grid">
+            {combos.data.combos.map((combo) => {
+              const baseMin = combo.components.reduce((sum, component) => {
+                const values = component.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
+                return sum + (values.length ? Math.min(...values) : component.product.wholesalePrice) * component.quantity;
+              }, 0);
+              const baseMax = combo.components.reduce((sum, component) => {
+                const values = component.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
+                return sum + (values.length ? Math.max(...values) : component.product.wholesalePrice) * component.quantity;
+              }, 0);
+              return <article className="reseller-combo-card" key={combo._id}>
+                <div className="reseller-combo-images">{combo.components.map((component) => {
+                  const image = component.product.images?.find((entry) => entry.isPrimary) ?? component.product.images?.[0];
+                  return <span key={component.productId}>{image ? <img src={image.url} alt={component.product.title}/> : <Package size={18}/>}</span>;
+                })}<span className="reseller-combo-mark"><Layers size={14}/> COMBO</span></div>
+                <div className="reseller-combo-card-copy"><h3>{combo.title}</h3><p>{combo.components.map((component) => component.quantity + " × " + component.product.title).join(" · ")}</p><strong>{money(comboSellingPrice(baseMin, combo.profitMode, combo.profitValue))}{baseMax !== baseMin ? " – " + money(comboSellingPrice(baseMax, combo.profitMode, combo.profitValue)) : ""}</strong></div>
+                <button type="button" className="product-card-action danger" onClick={() => { if (window.confirm("¿Retirar este combo? Los productos originales no se modificarán.")) removeCombo.mutate(combo._id); }} disabled={removeCombo.isPending}><Trash2 size={14}/> Retirar combo</button>
+              </article>;
+            })}
+          </div>
+        ) : <div className="panel-card dashboard-empty product-empty"><div className="dashboard-empty-icon"><Layers size={20}/></div><strong>Aún no has creado combos</strong><span>Agrupa productos del catálogo general para publicarlos como un solo artículo.</span></div>}
+      </section>
     </div>
   );
 }
