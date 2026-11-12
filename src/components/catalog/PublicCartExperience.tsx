@@ -121,7 +121,9 @@ function draft(items: PublicCartViewItem[]): PublicCartDraftItem[] {
 }
 
 function totalQuantity(items: PublicCartViewItem[]) {
-  return items.reduce((sum, item) => sum + item.quantity, 0);
+  return items.reduce((sum, item) => sum + item.quantity * (item.kind === "COMBO"
+    ? (item.components ?? []).reduce((componentSum, component) => componentSum + component.quantity, 0)
+    : 1), 0);
 }
 
 export function PublicCartExperience({
