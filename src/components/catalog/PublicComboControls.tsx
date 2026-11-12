@@ -52,6 +52,7 @@ export function PublicComboControls(props: Props) {
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState("");
   const [added, setAdded] = useState(false);
+  const [activeGalleryKey, setActiveGalleryKey] = useState<string | null>(null);
 
   const selected = useMemo(() => props.components.map((component) => {
     const available = component.variants.filter((variant) => variant.stock > 0);
@@ -87,9 +88,14 @@ export function PublicComboControls(props: Props) {
     : 0;
   const gallery = selected.flatMap((item) => {
     const images = item.variant?.images.length ? item.variant.images : item.component.images;
-    const primary = primaryImage(images);
-    return primary ? [{ ...primary, key: item.component.productId, title: item.component.title }] : [];
+    const ordered = [...images].sort((left, right) => Number(Boolean(right.isPrimary)) - Number(Boolean(left.isPrimary)));
+    return ordered.map((image, index) => ({
+      ...image,
+      key: item.component.productId + ":" + index,
+      title: item.component.title,
+    }));
   });
+  const activeGalleryImage = gallery.find((image) => image.key === activeGalleryKey) ?? gallery[0];
 
   function matching(component: Component, next: Record<string, string>, ignoreName?: string) {
     const variants = component.variants.filter((variant) => variant.stock > 0);
@@ -168,10 +174,10 @@ export function PublicComboControls(props: Props) {
     <div className="public-combo-detail-grid">
       <div className="public-combo-detail-gallery">
         <div className="public-combo-gallery-cover">
-          {gallery[0] ? <img src={gallery[0].url} alt={gallery[0].alt || gallery[0].title}/> : <Package size={44}/>}
+          {activeGalleryImage ? <img src={activeGalleryImage.url} alt={activeGalleryImage.alt || activeGalleryImage.title}/> : <Package size={44}/>}
         </div>
         <div className="public-combo-gallery-strip">
-          {gallery.map((image) => <div key={image.key} title={image.title}><img src={image.url} alt={image.alt || image.title}/></div>)}
+          {gallery.map((image) => <button type="button" key={image.key} title={image.title} aria-label={"Ver imagen de " + image.title} className={activeGalleryImage?.key === image.key ? "active" : ""} onClick={() => setActiveGalleryKey(image.key)}><img src={image.url} alt={image.alt || image.title}/></button>)}
         </div>
       </div>
 
