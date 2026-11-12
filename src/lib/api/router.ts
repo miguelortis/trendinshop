@@ -9,6 +9,7 @@ import {
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
 import { createProduct, updateProduct } from "@/lib/api/products";
+import { createResellerCombo, listResellerCombos, removeResellerCombo, updateResellerCombo } from "@/lib/api/combos";
 import {
   addResellerCatalogItem,
   listResellerCatalog,
