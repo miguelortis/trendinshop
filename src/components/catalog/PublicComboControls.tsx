@@ -74,9 +74,14 @@ export function PublicComboControls(props: Props) {
   const complete = selected.every((item) => Boolean(item.variant));
   const baseCost = selected.reduce((sum, item) =>
     sum + (item.variant?.wholesalePrice ?? 0) * item.component.quantity, 0);
+  const estimatedBaseCost = selected.reduce((sum, item) => {
+    const options = item.available.map((variant) => variant.wholesalePrice);
+    return sum + (options.length ? Math.min(...options) : 0) * item.component.quantity;
+  }, 0);
+  const displayBaseCost = complete ? baseCost : estimatedBaseCost;
   const price = props.profitMode === "PERCENT"
-    ? baseCost * (1 + props.profitValue / 100)
-    : baseCost + props.profitValue;
+    ? displayBaseCost * (1 + props.profitValue / 100)
+    : displayBaseCost + props.profitValue;
   const maxComboQuantity = selected.every((item) => item.variant)
     ? Math.min(...selected.map((item) => Math.floor((item.variant?.stock ?? 0) / item.component.quantity)))
     : 0;
