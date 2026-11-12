@@ -535,15 +535,14 @@ export async function createSale(request: Request, userId: string, userRole: str
         if (!sharedCart) {
           fail("Este carrito ya se utilizó, caducó o no pertenece a tu tienda.", 404, "SHARED_CART_NOT_AVAILABLE");
         }
-        const sharedLines = readSaleLines(sharedCart.items.map((item) => ({
-          variantId: String(item.variantId),
-          quantity: Number(item.quantity),
-        })));
+        const rawSharedLines = sharedCart.items.flatMap((item: any, index: number) => {
+          if (item.kind === "COMBO") return expandComboSnapshot(item, String(sharedCartToken) + ":" + index);
+          sharedCartPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
+          return [{ variantId: String(item.variantId), quantity: Number(item.quantity) }];
+        });
+        const sharedLines = readSaleLines(rawSharedLines);
         if (!sharedLines) fail("El carrito compartido no contiene productos válidos.", 409, "SHARED_CART_ITEMS_INVALID");
         effectiveLines = sharedLines;
-        for (const item of sharedCart.items) {
-          sharedCartPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
-        }
       }
 
       if (sourcePublicOrderId) {
@@ -559,13 +558,15 @@ export async function createSale(request: Request, userId: string, userRole: str
           fail("El pedido ya fue convertido, cancelado o no pertenece a tu catálogo.", 409, "PUBLIC_ORDER_NOT_CONVERTIBLE");
         }
 
-        const orderLines = sourceOrder.items.map((item) => {
+        const orderLines = sourceOrder.items.flatMap((item: any, index: number) => {
+          if (item.kind === "COMBO") return expandComboSnapshot(item, String(sourceOrder!._id) + ":" + index);
           sourceOrderPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
-          return {
+          return [{
             variantId: String(item.variantId),
             quantity: Number(item.quantity),
             unitPrice: item.unitPrice,
-          };
+            lineTotal: item.lineTotal,
+          }];
         });
         const parsedOrderLines = readSaleLines(orderLines);
         if (!parsedOrderLines) fail("Los productos guardados en el pedido ya no son válidos.", 409, "PUBLIC_ORDER_ITEMS_INVALID");
@@ -674,7 +675,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         const product = productById.get(String(variant.productId));
         if (!product) fail("Uno de los productos ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
         const catalogItem = catalogByProductId.get(String(product._id));
-        if (userRole === "RESELLER" && !catalogItem) {
+        if (userRole === "RESELLER" && !catalogItem && !line.comboId) {
           fail("Añade primero cada producto a tu catálogo personal.", 403, "PRODUCT_NOT_IN_CATALOG");
         }
 
@@ -684,24 +685,32 @@ export async function createSale(request: Request, userId: string, userRole: str
         const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
         const sharedCartPrice = sharedCartPriceByVariant.get(line.variantId);
         const currentCatalogPrice = sharedCartPrice !== undefined && catalogItem ? defaultPrice : undefined;
-        const unitPrice = sourceOrderPrice !== undefined
-          ? parsePrice(sourceOrderPrice)
-          : currentCatalogPrice !== undefined
-            ? parsePrice(currentCatalogPrice)
-            : sharedCartPrice !== undefined
-              ? parsePrice(sharedCartPrice)
-              : userRole === "RESELLER" && catalogItem
-                ? parsePrice(defaultPrice)
-                : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
-                    ? parsePrice(defaultPrice)
-                    : parsePrice(line.unitPrice));
+        const unitPrice = line.comboId
+          ? parsePrice(line.unitPrice)
+          : sourceOrderPrice !== undefined
+            ? parsePrice(sourceOrderPrice)
+            : currentCatalogPrice !== undefined
+              ? parsePrice(currentCatalogPrice)
+              : sharedCartPrice !== undefined
+                ? parsePrice(sharedCartPrice)
+                : userRole === "RESELLER" && catalogItem
+                  ? parsePrice(defaultPrice)
+                  : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
+                      ? parsePrice(defaultPrice)
+                      : parsePrice(line.unitPrice));
         if (unitPrice === null) fail("El precio de venta debe ser mayor que cero.", 400, "INVALID_PRICE");
 
         const unitCost = userRole === "ADMIN"
           ? (variant.purchasePrice ?? product.purchasePrice)
           : (variant.wholesalePrice ?? product.wholesalePrice);
         const unitCostCents = toCents(Number(unitCost));
-        const lineTotalCents = toCents(unitPrice) * line.quantity;
+        const customLineTotal = line.lineTotal === undefined || line.lineTotal === null || line.lineTotal === ""
+          ? null
+          : Number(line.lineTotal);
+        if (customLineTotal !== null && (!Number.isFinite(customLineTotal) || customLineTotal <= 0)) {
+          fail("El importe asignado a un componente del combo no es válido.", 400, "INVALID_COMBO_LINE_TOTAL");
+        }
+        const lineTotalCents = customLineTotal === null ? toCents(unitPrice) * line.quantity : toCents(customLineTotal);
         const lineCostCents = unitCostCents * line.quantity;
 
         return {
@@ -772,6 +781,9 @@ export async function createSale(request: Request, userId: string, userRole: str
           productSku: item.product.sku,
           variantLabel: item.variant.label,
           variantSku: item.variant.sku,
+          comboId: item.sourceLine.comboId ? new mongoose.Types.ObjectId(item.sourceLine.comboId) : null,
+          comboTitle: item.sourceLine.comboTitle ?? "",
+          comboGroupId: item.sourceLine.comboGroupId ?? "",
           options: item.variant.options ?? [],
           quantity: item.quantity,
           unitPrice: item.unitPrice,
