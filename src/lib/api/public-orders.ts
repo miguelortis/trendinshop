@@ -301,7 +301,7 @@ export async function createPublicOrder(request: Request, buyerId: string) {
               variantLabel: variant.label,
               variantSku: variant.sku,
               quantity,
-              unitCost: fromCents(toCents(Number(variant.wholesalePrice ?? 0))),
+              unitCost: fromCents(toCents(Number(variant.wholesalePrice ?? product.wholesalePrice ?? 0))),
               stockAtRequest: variant.stock,
             };
           });
@@ -579,7 +579,7 @@ async function convertPublicOrderToSale(orderId: string, userId: string, userRol
             lineTotal: fromCents(lineTotalCents),
             comboId: String(item.comboId),
             comboTitle: item.comboTitle || item.productTitle,
-            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + String(item._id ?? index),
+            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + components.map((entry: any) => String(entry.variantId)).join("-"),
           };
         });
       }),
