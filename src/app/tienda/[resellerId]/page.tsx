@@ -295,7 +295,9 @@ export default async function PublicCatalogPage({ params }: PageProps) {
           </div>
         </section>
 
-        {catalog.products.length ? (
+        {catalog.products.length || catalog.combos.length ? (
+          <>
+          {catalog.products.length ? (
           <section className="public-catalog-grid" aria-label="Productos del catálogo">
             {catalog.products.map((product) => {
               const image = product.images.find((item) => item.isPrimary) ?? product.images[0];
@@ -333,6 +335,33 @@ export default async function PublicCatalogPage({ params }: PageProps) {
               );
             })}
           </section>
+          ) : null}
+          {catalog.combos.length ? (
+            <section className="public-combo-grid" aria-label="Combos disponibles">
+              {catalog.combos.map((combo) => {
+                const image = combo.images[0];
+                return (
+                  <article className="public-catalog-card public-combo-catalog-card" key={combo.id}>
+                    <Link href={"/tienda/" + resellerId + "/combo/" + combo.id} className="public-catalog-image">
+                      <div className="public-combo-card-images">
+                        {combo.images.slice(0, 4).map((entry, index) => <img key={entry.url + index} src={entry.url} alt={entry.alt || combo.title} loading="lazy" decoding="async"/>)}
+                      </div>
+                      <span className="public-combo-card-badge">COMBO · {combo.components.length} productos</span>
+                      <span className={combo.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>{combo.available ? "Disponible" : "Agotado"}</span>
+                    </Link>
+                    <div className="public-catalog-card-body">
+                      <span className="public-catalog-category">Combo</span>
+                      <h2><Link href={"/tienda/" + resellerId + "/combo/" + combo.id}>{combo.title}</Link></h2>
+                      {combo.description ? <p className="public-catalog-description">{combo.description}</p> : null}
+                      <div className="public-combo-includes">{combo.components.map((component) => <span key={component.productId}>{component.quantity} × {component.title}</span>)}</div>
+                      <div className="public-catalog-price-row"><span>Precio del combo</span><strong>{combo.minPrice === combo.maxPrice ? money(combo.minPrice) : "Desde " + money(combo.minPrice)}</strong></div>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          ) : null}
+          </>
         ) : (
           <section className="public-catalog-empty">
             <div className="public-catalog-empty-mark">T</div>
