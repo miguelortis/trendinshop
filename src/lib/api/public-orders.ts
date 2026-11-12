@@ -579,7 +579,7 @@ async function convertPublicOrderToSale(orderId: string, userId: string, userRol
             lineTotal: fromCents(lineTotalCents),
             comboId: String(item.comboId),
             comboTitle: item.comboTitle || item.productTitle,
-            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + components.map((entry: any) => String(entry.variantId)).join("-"),
+            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + (item.components ?? []).map((entry: any) => String(entry.variantId)).join("-"),
           };
         });
       }),
