@@ -56,6 +56,7 @@ type PublicProductForOrder = {
   _id: mongoose.Types.ObjectId;
   title: string;
   sku: string;
+  wholesalePrice?: number;
 };
 type PublicVariantForOrder = {
   _id: mongoose.Types.ObjectId;
@@ -63,6 +64,7 @@ type PublicVariantForOrder = {
   label: string;
   sku: string;
   stock: number;
+  wholesalePrice?: number | null;
 };
 type ProductOrderInput = { kind: "PRODUCT"; productId: string; variantId: string; quantity: number };
 type ComboOrderInput = { kind: "COMBO"; comboId: string; quantity: number; components: { productId: string; variantId: string; quantity: number }[] };
@@ -553,11 +555,34 @@ async function convertPublicOrderToSale(orderId: string, userId: string, userRol
 
     const payload = {
       sourcePublicOrderId: String(order._id),
-      items: order.items.map((item) => ({
-        variantId: String(item.variantId),
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-      })),
+      items: order.items.flatMap((item: any) => {
+        if (item.kind !== "COMBO") return [{
+          variantId: String(item.variantId),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        }];
+        const components = item.components ?? [];
+        const totalRevenueCents = toCents(Number(item.unitPrice) * Number(item.quantity));
+        const totalWeight = components.reduce((sum: number, component: any) =>
+          sum + Math.max(1, toCents(Number(component.unitCost) * Number(component.quantity) * Number(item.quantity))), 0);
+        let allocated = 0;
+        return components.map((component: any, index: number) => {
+          const quantity = Number(component.quantity) * Number(item.quantity);
+          const lineTotalCents = index === components.length - 1
+            ? totalRevenueCents - allocated
+            : Math.max(1, Math.round(totalRevenueCents * Math.max(1, toCents(Number(component.unitCost) * quantity)) / totalWeight));
+          allocated += lineTotalCents;
+          return {
+            variantId: String(component.variantId),
+            quantity,
+            unitPrice: fromCents(Math.max(1, Math.round(lineTotalCents / quantity))),
+            lineTotal: fromCents(lineTotalCents),
+            comboId: String(item.comboId),
+            comboTitle: item.comboTitle || item.productTitle,
+            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + String(item._id ?? index),
+          };
+        });
+      }),
       initialPayment: 0,
       paymentMethod: "CASH",
       note: "Pedido público " + order.orderNumber + (order.note ? " · " + order.note : ""),
