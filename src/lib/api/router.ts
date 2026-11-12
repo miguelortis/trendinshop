@@ -99,6 +99,13 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     }
   }
 
+  if (resource === "combos") {
+    if (method === "GET" && !action) return listResellerCombos(user.id, user.role);
+    if (method === "POST" && !action) return createResellerCombo(request, user.id, user.role);
+    if ((method === "PATCH" || method === "PUT") && action) return updateResellerCombo(request, action, user.id, user.role);
+    if (method === "DELETE" && action) return removeResellerCombo(action, user.id, user.role);
+  }
+
   if (resource === "products") {
     if (method === "GET" && action) return getProductById(action, user.role);
     if (method === "GET") return listProducts(user.role);
