@@ -721,7 +721,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         const customLineTotal = line.lineTotal === undefined || line.lineTotal === null || line.lineTotal === ""
           ? null
           : Number(line.lineTotal);
-        if (customLineTotal !== null && (!Number.isFinite(customLineTotal) || customLineTotal <= 0)) {
+        if (customLineTotal !== null && (!Number.isFinite(customLineTotal) || customLineTotal < 0)) {
           fail("El importe asignado a un componente del combo no es válido.", 400, "INVALID_COMBO_LINE_TOTAL");
         }
         const lineTotalCents = customLineTotal === null ? toCents(unitPrice) * line.quantity : toCents(customLineTotal);
