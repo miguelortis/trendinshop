@@ -6,10 +6,16 @@ import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicCartShareModel } from "@/models/PublicCartShare";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
+import { ResellerComboModel } from "@/models/ResellerCombo";
 import { UserModel } from "@/models/User";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 
-type CartInputItem = { productId: string; variantId: string; quantity: number };
+type ProductCartInput = { kind?: "PRODUCT"; productId: string; variantId: string; quantity: number };
+type ComboCartInput = {
+  kind: "COMBO"; productId: string; variantId: string; comboId: string; quantity: number;
+  components: { productId: string; variantId: string; quantity: number }[];
+};
+type CartInputItem = ProductCartInput | ComboCartInput;
 type SellerRecord = {
   _id: mongoose.Types.ObjectId;
   firstName: string;
@@ -20,13 +26,14 @@ type SellerRecord = {
   storeSlug?: string;
   storeLogoUrl?: string;
 };
-type ProductRecord = { _id: mongoose.Types.ObjectId; title: string; sku: string };
+type ProductRecord = { _id: mongoose.Types.ObjectId; title: string; sku: string; wholesalePrice?: number };
 type VariantRecord = {
   _id: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
   label: string;
   sku: string;
   stock: number;
+  wholesalePrice?: number | null;
 };
 type CatalogItemRecord = { productId: mongoose.Types.ObjectId; sellingPrice: number; variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[] };
 type SnapshotItem = {
@@ -37,6 +44,7 @@ type SnapshotItem = {
   variantLabel: string;
   unitPrice: number;
 };
+type ComboSnapshot = { comboId: string; title: string; unitPrice: number; components: { productId: string; variantId: string; quantity: number; productTitle: string; productSku: string; variantLabel: string; variantSku: string; unitCost: number }[] };
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -60,17 +68,42 @@ function normalizeCartItems(value: unknown): CartInputItem[] | null {
   for (const raw of value) {
     if (!raw || typeof raw !== "object") return null;
     const item = raw as Record<string, unknown>;
+    const quantity = Number(item.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) return null;
+    if (item.kind === "COMBO") {
+      const comboId = text(item.comboId);
+      if (!mongoose.isValidObjectId(comboId) || !Array.isArray(item.components) ||
+          item.components.length < 2 || item.components.length > 5) return null;
+      const components: ComboCartInput["components"] = [];
+      const componentProducts = new Set<string>();
+      for (const rawComponent of item.components) {
+        if (!rawComponent || typeof rawComponent !== "object") return null;
+        const component = rawComponent as Record<string, unknown>;
+        const productId = text(component.productId);
+        const variantId = text(component.variantId);
+        const componentQuantity = Number(component.quantity);
+        if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) ||
+            !Number.isInteger(componentQuantity) || componentQuantity < 1 || componentQuantity > 50 ||
+            componentProducts.has(productId)) return null;
+        componentProducts.add(productId);
+        components.push({ productId, variantId, quantity: componentQuantity });
+      }
+      const key = comboId + ":" + components.map((component) => component.variantId).join("-");
+      if (seen.has(key)) return null;
+      seen.add(key);
+      output.push({ kind: "COMBO", comboId, productId: comboId, variantId: "COMBO:" + key, quantity, components });
+      continue;
+    }
     const productId = text(item.productId);
     const variantId = text(item.variantId);
-    const quantity = Number(item.quantity);
-    if (!/^[a-f0-9]{24}$/i.test(productId) || !/^[a-f0-9]{24}$/i.test(variantId) ||
-      !Number.isInteger(quantity) || quantity < 1 || quantity > 100) return null;
+    if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId)) return null;
     if (seen.has(variantId)) return null;
     seen.add(variantId);
-    output.push({ productId, variantId, quantity });
+    output.push({ kind: "PRODUCT", productId, variantId, quantity });
   }
   return output;
 }
+
 function serializeSeller(seller: SellerRecord) {
   return {
     id: String(seller._id),
@@ -89,9 +122,9 @@ async function findSeller(resellerId: string) {
   }).select("_id firstName lastName phone role storeName storeSlug storeLogoUrl").lean() as unknown as SellerRecord | null;
 }
 
-async function hydrateCartItems(
+async function hydrateProductCartItems(
   seller: SellerRecord,
-  items: CartInputItem[],
+  items: ProductCartInput[],
   snapshots: SnapshotItem[] = [],
   strict = false,
 ) {
@@ -150,6 +183,88 @@ async function hydrateCartItems(
     };
   });
   return output;
+}
+
+
+async function hydrateComboCartItem(seller: SellerRecord, input: ComboCartInput, strict = false, snapshot?: ComboSnapshot) {
+  const combo = await ResellerComboModel.findOne({ _id: input.comboId, resellerId: seller._id, isActive: true }).lean() as any;
+  if (!combo) {
+    if (strict || !snapshot) throw new Error("El combo ya no está disponible en este catálogo.");
+    return {
+      kind: "COMBO", comboId: input.comboId, productId: input.comboId, variantId: input.variantId,
+      components: snapshot.components, productTitle: snapshot.title, productSku: "", variantLabel: "Combo",
+      variantSku: "", quantity: input.quantity, unitPrice: snapshot.unitPrice,
+      lineTotal: fromCents(toCents(snapshot.unitPrice) * input.quantity), stock: 0, available: false,
+    };
+  }
+  const definitions = (combo.components ?? []) as { productId: mongoose.Types.ObjectId; quantity: number }[];
+  if (definitions.length !== input.components.length) throw new Error("La composición del combo cambió. Actualiza el carrito y vuelve a seleccionarlo.");
+  const productIds = definitions.map((component) => String(component.productId));
+  const selectedByProduct = new Map(input.components.map((component) => [component.productId, component]));
+  if (productIds.some((id) => !selectedByProduct.has(id))) throw new Error("Selecciona una variante para cada producto del combo.");
+  const variantIds = input.components.map((component) => new mongoose.Types.ObjectId(component.variantId));
+  const [products, variants] = await Promise.all([
+    ProductModel.find({ _id: { $in: definitions.map((item) => item.productId) }, isActive: true }).select("_id title sku wholesalePrice").lean() as unknown as Promise<ProductRecord[]>,
+    ProductVariantModel.find({ _id: { $in: variantIds }, isActive: true }).select("_id productId label sku stock wholesalePrice").lean() as unknown as Promise<VariantRecord[]>,
+  ]);
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+  const variantById = new Map(variants.map((variant) => [String(variant._id), variant]));
+  const components = definitions.map((definition) => {
+    const productId = String(definition.productId);
+    const product = productById.get(productId);
+    const selected = selectedByProduct.get(productId);
+    const variant = selected ? variantById.get(selected.variantId) : undefined;
+    if (!product || !variant || String(variant.productId) !== productId) {
+      throw new Error("Una de las variantes seleccionadas ya no pertenece al combo.");
+    }
+    const quantity = Number(definition.quantity ?? 1);
+    const unitCost = fromCents(toCents(Number(variant.wholesalePrice ?? product.wholesalePrice ?? 0)));
+    return {
+      productId, variantId: String(variant._id), quantity,
+      productTitle: product.title, productSku: product.sku,
+      variantLabel: variant.label, variantSku: variant.sku,
+      unitCost, stock: variant.stock,
+      required: quantity * input.quantity,
+    };
+  });
+  const stock = Math.min(...components.map((component) => Math.floor(component.stock / component.quantity)));
+  const available = components.every((component) => component.stock >= component.required);
+  if (strict && !available) {
+    const shortage = components.find((component) => component.stock < component.required);
+    throw new Error("No hay existencias suficientes para " + (shortage?.productTitle ?? combo.title) + ". Disponibles: " + stock + " combos.");
+  }
+  const baseCost = components.reduce((sum, component) => sum + toCents(component.unitCost) * component.quantity, 0);
+  const base = fromCents(baseCost);
+  const unitPrice = fromCents(toCents(combo.profitMode === "PERCENT"
+    ? base * (1 + Number(combo.profitValue) / 100)
+    : base + Number(combo.profitValue)));
+  return {
+    kind: "COMBO", comboId: input.comboId, productId: input.comboId, variantId: input.variantId,
+    components: components.map(({ stock: _stock, required: _required, ...component }) => component),
+    productTitle: combo.title, productSku: "", variantLabel: components.map((component) => component.variantLabel).join(" + "),
+    variantSku: "", quantity: input.quantity, unitPrice,
+    lineTotal: fromCents(toCents(unitPrice) * input.quantity),
+    stock: Math.max(0, stock), available: available && unitPrice > 0,
+  };
+}
+
+async function hydrateCartItems(
+  seller: SellerRecord,
+  items: CartInputItem[],
+  snapshots: SnapshotItem[] = [],
+  strict = false,
+  comboSnapshots: ComboSnapshot[] = [],
+) {
+  const regularItems = items.filter((item): item is ProductCartInput => item.kind !== "COMBO");
+  const regularSnapshots = snapshots;
+  const regular = regularItems.length ? await hydrateProductCartItems(seller, regularItems, regularSnapshots, strict) : [];
+  const regularById = new Map(regular.map((item) => [item.variantId, item]));
+  const snapshotByCombo = new Map(comboSnapshots.map((snapshot) => [snapshot.comboId, snapshot]));
+  const comboItems = items.filter((item): item is ComboCartInput => item.kind === "COMBO");
+  const combo = await Promise.all(comboItems.map((item) =>
+    hydrateComboCartItem(seller, item, strict, snapshotByCombo.get(item.comboId))));
+  const comboByKey = new Map(combo.map((item) => [item.variantId, item]));
+  return items.map((item) => item.kind === "COMBO" ? comboByKey.get(item.variantId)! : regularById.get(item.variantId)!);
 }
 
 export async function validatePublicCart(request: Request) {
