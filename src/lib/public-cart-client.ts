@@ -66,11 +66,14 @@ export function readPublicCart(resellerId: string): PublicCartDraftItem[] {
           return [{ productId: component.productId, variantId: component.variantId, quantity: componentQuantity }];
         });
         if (safeComponents.length !== components.length) return [];
+        const storedVariantId = typeof item.variantId === "string" && item.variantId.startsWith("COMBO:" + comboId + ":")
+          ? item.variantId
+          : "COMBO:" + comboId + ":" + safeComponents.map((component) => component.variantId).join("-");
         return [{
           kind: "COMBO" as const,
           comboId,
           productId: comboId,
-          variantId: "COMBO:" + comboId,
+          variantId: storedVariantId,
           quantity,
           components: safeComponents,
         }];
