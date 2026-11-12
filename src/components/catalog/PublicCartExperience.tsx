@@ -539,7 +539,7 @@ export function PublicCartExperience({
                       {!item.available ? <em>{item.stock <= 0 ? "No disponible actualmente" : "Solo quedan " + item.stock + " unidades"}</em> : null}
                       <div className="public-cart-item-mobile-total">{money(item.lineTotal)}</div>
                     </div>
-                    <div className="public-cart-item-unit">{money(item.unitPrice)} <small>/ unidad</small></div>
+                    <div className="public-cart-item-unit">{money(item.unitPrice)} <small>/ {item.kind === "COMBO" ? "combo" : "unidad"}</small></div>
                     <div className="public-cart-quantity-picker">
                       <button type="button" aria-label={"Reducir cantidad de " + item.productTitle} onClick={() => changeQuantity(item.variantId, item.quantity - 1)}><Minus size={13} /></button>
                       <span>{item.quantity}</span>
