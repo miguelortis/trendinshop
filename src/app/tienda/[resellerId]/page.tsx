@@ -191,7 +191,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     const components = (combo.components ?? []).flatMap((component: any) => {
       const id = String(component.productId);
       const product = productById.get(id);
-      if (!product || !product.isActive && product.isActive !== undefined) return [];
+      if (!product) return [];
       const componentVariants = (variantsByProductId.get(id) ?? []).filter((variant) => variant.stock > 0);
       const variantOptions = componentVariants.map((variant) => ({
         id: String(variant._id), label: variantLabel(variant), options: variant.options ?? [],
