@@ -245,10 +245,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   const title = "Catálogo de " + (catalog.reseller.name || "revendedor");
-  const description = catalog.reseller.description || (catalog.products.length
-    ? "Explora " + catalog.products.length + (catalog.products.length === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
+  const publicItemCount = catalog.products.length + catalog.combos.length;
+  const description = catalog.reseller.description || (publicItemCount
+    ? "Explora " + publicItemCount + (publicItemCount === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
     : "Pronto habrá productos disponibles en el catálogo de " + catalog.reseller.name + ".");
-  const image = catalog.products.flatMap((product) => product.images)[0]?.url || catalog.reseller.logoUrl;
+  const image = catalog.products.flatMap((product) => product.images)[0]?.url || catalog.combos.flatMap((combo) => combo.images)[0]?.url || catalog.reseller.logoUrl;
   const images = image ? [{ url: image }] : undefined;
 
   return {
