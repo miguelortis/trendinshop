@@ -314,7 +314,25 @@ export async function createPublicCartShare(request: Request) {
     await PublicCartShareModel.create({
       token,
       resellerId: seller._id,
-      items: hydrated.map((item) => ({
+      items: hydrated.map((item: any) => item.kind === "COMBO" ? ({
+        kind: "COMBO",
+        comboId: new mongoose.Types.ObjectId(item.comboId),
+        quantity: item.quantity,
+        productTitle: item.productTitle,
+        variantLabel: item.variantLabel,
+        unitPrice: item.unitPrice,
+        components: item.components.map((component: any) => ({
+          productId: new mongoose.Types.ObjectId(component.productId),
+          variantId: new mongoose.Types.ObjectId(component.variantId),
+          quantity: component.quantity,
+          productTitle: component.productTitle,
+          productSku: component.productSku,
+          variantLabel: component.variantLabel,
+          variantSku: component.variantSku,
+          unitCost: component.unitCost,
+        })),
+      }) : ({
+        kind: "PRODUCT",
         productId: new mongoose.Types.ObjectId(item.productId),
         variantId: new mongoose.Types.ObjectId(item.variantId),
         quantity: item.quantity,
@@ -355,19 +373,31 @@ export async function getPublicCartShare(request: Request) {
     }).lean() as unknown as {
       token: string;
       resellerId: mongoose.Types.ObjectId;
-      items: (CartInputItem & { productTitle?: string; variantLabel?: string; unitPrice?: number })[];
+      items: any[];
       expiresAt: Date;
     } | null;
     if (!shared) return errorResponse("Este enlace del carrito ha caducado o ya no está disponible.", 404, "CART_SHARE_NOT_FOUND");
 
     const seller = await findSeller(String(shared.resellerId));
     if (!seller) return errorResponse("Esta tienda ya no está disponible.", 404, "STORE_NOT_FOUND");
-    const normalizedItems: CartInputItem[] = shared.items.map((item) => ({
+    const normalizedItems: CartInputItem[] = shared.items.map((item) => item.kind === "COMBO" ? ({
+      kind: "COMBO",
+      comboId: String(item.comboId),
+      productId: String(item.comboId),
+      variantId: "COMBO:" + String(item.comboId) + ":" + (item.components ?? []).map((component: any) => String(component.variantId)).join("-"),
+      quantity: Number(item.quantity),
+      components: (item.components ?? []).map((component: any) => ({
+        productId: String(component.productId),
+        variantId: String(component.variantId),
+        quantity: Number(component.quantity),
+      })),
+    }) : ({
+      kind: "PRODUCT",
       productId: String(item.productId),
       variantId: String(item.variantId),
       quantity: Number(item.quantity),
     }));
-    const snapshots: SnapshotItem[] = shared.items.map((item) => ({
+    const snapshots: SnapshotItem[] = shared.items.filter((item) => item.kind !== "COMBO").map((item) => ({
       productId: new mongoose.Types.ObjectId(String(item.productId)),
       variantId: new mongoose.Types.ObjectId(String(item.variantId)),
       quantity: Number(item.quantity),
@@ -375,7 +405,18 @@ export async function getPublicCartShare(request: Request) {
       variantLabel: item.variantLabel ?? "",
       unitPrice: Number(item.unitPrice ?? 0),
     }));
-    const hydrated = await hydrateCartItems(seller, normalizedItems, snapshots);
+    const comboSnapshots: ComboSnapshot[] = shared.items.filter((item) => item.kind === "COMBO").map((item) => ({
+      comboId: String(item.comboId),
+      title: item.productTitle ?? "Combo",
+      unitPrice: Number(item.unitPrice ?? 0),
+      components: (item.components ?? []).map((component: any) => ({
+        productId: String(component.productId), variantId: String(component.variantId),
+        quantity: Number(component.quantity), productTitle: component.productTitle ?? "",
+        productSku: component.productSku ?? "", variantLabel: component.variantLabel ?? "",
+        variantSku: component.variantSku ?? "", unitCost: Number(component.unitCost ?? 0),
+      })),
+    }));
+    const hydrated = await hydrateCartItems(seller, normalizedItems, snapshots, false, comboSnapshots);
     return NextResponse.json({
       ok: true,
       token: shared.token,
