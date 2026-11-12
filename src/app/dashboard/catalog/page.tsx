@@ -68,6 +68,7 @@ export default function ResellerCatalogPage() {
   const [comboBuilderOpen, setComboBuilderOpen] = useState(false);
   const [comboSearch, setComboSearch] = useState("");
   const [comboSelection, setComboSelection] = useState<string[]>([]);
+  const [comboQuantities, setComboQuantities] = useState<Record<string, string>>({});
   const [comboTitle, setComboTitle] = useState("");
   const [comboDescription, setComboDescription] = useState("");
   const [comboProfitMode, setComboProfitMode] = useState<"FIXED" | "PERCENT">("FIXED");
@@ -119,10 +120,10 @@ export default function ResellerCatalogPage() {
     mutationFn: async () => api.post("/combos", {
       title: comboTitle, description: comboDescription, profitMode: comboProfitMode,
       profitValue: Number(comboProfitValue),
-      components: comboSelection.map((productId) => ({ productId, quantity: 1 })),
+      components: comboSelection.map((productId) => ({ productId, quantity: Math.max(1, Math.min(50, Number(comboQuantities[productId]) || 1)) })),
     }),
     onSuccess: async () => {
-      setComboBuilderOpen(false); setComboSelection([]); setComboSearch(""); setComboTitle("");
+      setComboBuilderOpen(false); setComboSelection([]); setComboQuantities({}); setComboSearch(""); setComboTitle("");
       setComboDescription(""); setComboProfitMode("FIXED"); setComboProfitValue("5");
       setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["reseller-combos"] });
@@ -136,12 +137,22 @@ export default function ResellerCatalogPage() {
   });
   function openComboBuilder(initialProductId?: string) {
     setActionError(""); setComboSelection(initialProductId ? [initialProductId] : []);
+    setComboQuantities(initialProductId ? { [initialProductId]: "1" } : {});
     setComboSearch(""); setComboBuilderOpen(true);
   }
   function toggleComboProduct(productId: string) {
-    setComboSelection((current) => current.includes(productId)
+    const removing = comboSelection.includes(productId);
+    setComboSelection((current) => removing
       ? current.filter((id) => id !== productId)
       : current.length < 5 ? [...current, productId] : current);
+    setComboQuantities((current) => {
+      if (removing) {
+        const next = { ...current };
+        delete next[productId];
+        return next;
+      }
+      return { ...current, [productId]: "1" };
+    });
   }
   function comboSellingPrice(base: number, mode: "FIXED" | "PERCENT", value: number) {
     return Number((mode === "PERCENT" ? base * (1 + value / 100) : base + value).toFixed(2));
@@ -517,8 +528,14 @@ export default function ResellerCatalogPage() {
             </header>
             <div className="combo-builder-selection">
               <div className="combo-builder-section-heading"><strong>Seleccionados</strong><span>{comboSelection.length} / 5</span></div>
-              <div className="combo-builder-selected-list">
-                {selectedComboProducts.map((product) => <button type="button" className="combo-builder-chip" key={product._id} onClick={() => toggleComboProduct(product._id)}>{product.title}<X size={13}/></button>)}
+              <div className="combo-builder-selected-list combo-builder-selected-rows">
+                {selectedComboProducts.map((product) => (
+                  <div className="combo-builder-selected-row" key={product._id}>
+                    <strong>{product.title}</strong>
+                    <label>Cant. <input type="number" min="1" max="50" value={comboQuantities[product._id] ?? "1"} onChange={(event) => setComboQuantities((current) => ({ ...current, [product._id]: event.target.value }))}/></label>
+                    <button type="button" aria-label={"Quitar " + product.title} onClick={() => toggleComboProduct(product._id)}><X size={14}/></button>
+                  </div>
+                ))}
                 {!selectedComboProducts.length ? <small>Aún no has seleccionado productos.</small> : null}
               </div>
             </div>
@@ -546,11 +563,11 @@ export default function ResellerCatalogPage() {
               {selectedComboProducts.length >= 2 ? (() => {
                 const minimum = selectedComboProducts.reduce((sum, product) => {
                   const costs = product.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
-                  return sum + (costs.length ? Math.min(...costs) : product.wholesalePrice);
+                  return sum + (costs.length ? Math.min(...costs) : product.wholesalePrice) * Math.max(1, Number(comboQuantities[product._id]) || 1);
                 }, 0);
                 const maximum = selectedComboProducts.reduce((sum, product) => {
                   const costs = product.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
-                  return sum + (costs.length ? Math.max(...costs) : product.wholesalePrice);
+                  return sum + (costs.length ? Math.max(...costs) : product.wholesalePrice) * Math.max(1, Number(comboQuantities[product._id]) || 1);
                 }, 0);
                 return <div className="combo-builder-price-preview"><span>Precio estimado</span><strong>{money(comboSellingPrice(minimum, comboProfitMode, Number(comboProfitValue) || 0))} – {money(comboSellingPrice(maximum, comboProfitMode, Number(comboProfitValue) || 0))}</strong><small>El precio final se ajustará a las variantes que el cliente seleccione.</small></div>;
               })() : null}
