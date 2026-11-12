@@ -14,7 +14,7 @@ import { SaleModel } from "@/models/Sale";
 import { SalePaymentModel } from "@/models/SalePayment";
 import { ResellerSupplierPaymentModel } from "@/models/ResellerSupplierPayment";
 
-type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown };
+type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown; lineTotal?: unknown; comboId?: string; comboTitle?: string; comboGroupId?: string };
 type ProductRecord = {
   _id: mongoose.Types.ObjectId;
   title: string;
@@ -46,11 +46,7 @@ type CustomerRecord = {
 };
 
 type SharedCartSource = {
-  items: {
-    variantId: mongoose.Types.ObjectId | string;
-    quantity: number;
-    unitPrice: number;
-  }[];
+  items: any[];
   isActive: boolean;
   save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
 };
@@ -60,11 +56,7 @@ type PublicOrderSource = {
   resellerId: mongoose.Types.ObjectId;
   resellerRole: "ADMIN" | "RESELLER";
   status: "PENDING" | "IN_PROGRESS" | "CANCELLED" | "CONVERTED";
-  items: {
-    variantId: mongoose.Types.ObjectId;
-    quantity: number;
-    unitPrice: number;
-  }[];
+  items: any[];
   customer: {
     documentId?: string;
     firstName: string;
@@ -77,6 +69,34 @@ type PublicOrderSource = {
   convertedAt: Date | null;
   save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
 };
+
+function expandComboSnapshot(item: any, groupId: string): Record<string, unknown>[] {
+  const components = Array.isArray(item.components) ? item.components : [];
+  if (components.length < 2 || components.length > 5) fail("El combo no tiene un detalle válido de productos.", 409, "COMBO_SNAPSHOT_INVALID");
+  const quantity = Number(item.quantity);
+  const totalRevenue = toCents(Number(item.unitPrice) * quantity);
+  const weights = components.map((component: any) =>
+    Math.max(1, toCents(Number(component.unitCost ?? 0) * Number(component.quantity) * quantity)),
+  );
+  const totalWeight = weights.reduce((sum: number, value: number) => sum + value, 0);
+  let allocated = 0;
+  return components.map((component: any, index: number) => {
+    const componentQuantity = Number(component.quantity) * quantity;
+    const lineTotalCents = index === components.length - 1
+      ? totalRevenue - allocated
+      : Math.min(totalRevenue - allocated, Math.max(1, Math.round(totalRevenue * weights[index] / totalWeight)));
+    allocated += lineTotalCents;
+    return {
+      variantId: String(component.variantId),
+      quantity: componentQuantity,
+      unitPrice: fromCents(Math.max(1, Math.round(lineTotalCents / componentQuantity))),
+      lineTotal: fromCents(lineTotalCents),
+      comboId: String(item.comboId),
+      comboTitle: String(item.comboTitle || item.productTitle || "Combo"),
+      comboGroupId: groupId,
+    };
+  });
+}
 
 class SaleRequestError extends Error {
   status: number;
@@ -165,21 +185,26 @@ function serializeSale(input: unknown, userRole: string) {
 }
 
 function readSaleLines(value: unknown): SaleLineInput[] | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 30) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 150) return null;
   const result: SaleLineInput[] = [];
   const seen = new Set<string>();
-
   for (const entry of value) {
     if (!entry || typeof entry !== "object") return null;
     const row = entry as Record<string, unknown>;
     const variantId = text(row.variantId);
     const quantity = Number(row.quantity);
-    if (!mongoose.isValidObjectId(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
-      return null;
-    }
-    if (seen.has(variantId)) return null;
-    seen.add(variantId);
-    result.push({ variantId, quantity, unitPrice: row.unitPrice });
+    const comboId = text(row.comboId);
+    const comboGroupId = text(row.comboGroupId);
+    if (!mongoose.isValidObjectId(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 ||
+        (comboId && !mongoose.isValidObjectId(comboId)) || (comboGroupId && comboGroupId.length > 180)) return null;
+    const key = variantId + "|" + (comboGroupId || "PRODUCT");
+    if (seen.has(key)) return null;
+    seen.add(key);
+    result.push({
+      variantId, quantity, unitPrice: row.unitPrice, lineTotal: row.lineTotal,
+      comboId: comboId || undefined, comboTitle: text(row.comboTitle).slice(0, 120) || undefined,
+      comboGroupId: comboGroupId || undefined,
+    });
   }
   return result;
 }
