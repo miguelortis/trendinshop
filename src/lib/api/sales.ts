@@ -640,12 +640,13 @@ export async function createSale(request: Request, userId: string, userRole: str
       }
 
       const variantIds = effectiveLines.map((line) => line.variantId);
+      const uniqueVariantIds = [...new Set(variantIds)];
       const variants = await ProductVariantModel.find({
-        _id: { $in: variantIds },
+        _id: { $in: uniqueVariantIds },
         isActive: true,
       }).session(transactionSession).lean() as unknown as VariantRecord[];
 
-      if (variants.length !== effectiveLines.length) {
+      if (variants.length !== uniqueVariantIds.length) {
         fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
       }
 
