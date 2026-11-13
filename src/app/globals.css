@@ -3798,6 +3798,9 @@ button, input, select, textarea { font: inherit; }
 .public-combo-option-values button.unavailable,.public-combo-option-values button:disabled { border-style:dashed; color:#c0c5ce; background:#f9fafb; text-decoration:line-through; cursor:not-allowed; opacity:.65; }
 .public-combo-stock-note,.public-combo-auto-selection { color:#027a48; font-size:11px; }
 .public-combo-unavailable { margin:0; color:#b42318; font-size:12px; }
+.public-combo-stock-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 13px; border:1px solid #e4e7ec; border-radius:11px; background:#f9fafb; }
+.public-combo-stock-summary span { color:#667085; font-size:11px; }
+.public-combo-stock-summary strong { color:#101828; font-size:17px; font-weight:900; }
 .public-combo-total { display:grid; gap:4px; padding:15px; border:1px solid #d9d6fe; border-radius:13px; background:#faf9ff; }
 .public-combo-total span,.public-combo-total small { color:#667085; font-size:11px; }
 .public-combo-total strong { color:#53389e; font-size:27px; font-weight:900; }
