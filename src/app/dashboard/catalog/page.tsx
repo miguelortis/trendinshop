@@ -117,6 +117,12 @@ export default function ResellerCatalogPage() {
     }),
     [comboSelection, catalog.data?.products],
   );
+  const availablePacksToBuild = selectedComboProducts.length
+    ? Math.min(...selectedComboProducts.map((product) => {
+        const unitsPerPack = Math.max(1, Math.min(50, Number(comboQuantities[product._id]) || 1));
+        return Math.max(0, ...product.variants.map((variant) => Math.floor(variant.stock / unitsPerPack)));
+      }))
+    : 0;
   const createCombo = useMutation({
     mutationFn: async () => api.post("/combos", {
       title: comboTitle, description: comboDescription, profitMode: comboProfitMode,
@@ -561,13 +567,20 @@ export default function ResellerCatalogPage() {
                 {selectedComboProducts.map((product) => (
                   <div className="combo-builder-selected-row" key={product._id}>
                     <strong>{product.title}</strong>
-                    <label>Cant. <input type="number" min="1" max="50" value={comboQuantities[product._id] ?? "1"} onChange={(event) => setComboQuantities((current) => ({ ...current, [product._id]: event.target.value }))}/></label>
+                    <label>Unidades por pack <input type="number" min="1" max="50" value={comboQuantities[product._id] ?? "1"} onChange={(event) => setComboQuantities((current) => ({ ...current, [product._id]: event.target.value }))}/></label>
                     <button type="button" aria-label={"Quitar " + product.title} onClick={() => toggleComboProduct(product._id)}><X size={14}/></button>
                   </div>
                 ))}
                 {!selectedComboProducts.length ? <small>Aún no has seleccionado productos.</small> : null}
               </div>
             </div>
+            {selectedComboProducts.length >= 2 ? (
+              <div className="combo-builder-price-preview">
+                <span>Disponibilidad estimada</span>
+                <strong>{availablePacksToBuild} {availablePacksToBuild === 1 ? "pack completo" : "packs completos"}</strong>
+                <small>Se calcula con las existencias de una misma variante y las unidades que incluye cada pack.</small>
+              </div>
+            ) : null}
             <label className="search-field combo-builder-search"><Search size={16}/><input value={comboSearch} onChange={(event) => setComboSearch(event.target.value)} placeholder="Buscar productos por nombre o SKU..." /></label>
             <div className="combo-builder-product-list">
               {comboProducts.map((product) => {
@@ -603,7 +616,7 @@ export default function ResellerCatalogPage() {
               {createCombo.isError ? <p className="auth-error">{errorMessage(createCombo.error)}</p> : null}
               <div className="combo-builder-actions">
                 <button type="button" className="secondary-button" onClick={() => setComboBuilderOpen(false)} disabled={createCombo.isPending}>Cancelar</button>
-                <button type="button" className="primary-button" onClick={() => createCombo.mutate()} disabled={createCombo.isPending || comboSelection.length < 2 || !comboTitle.trim() || !Number.isFinite(Number(comboProfitValue)) || Number(comboProfitValue) <= 0}><Layers size={15}/>{createCombo.isPending ? "Creando..." : "Crear combo"}</button>
+                <button type="button" className="primary-button" onClick={() => createCombo.mutate()} disabled={createCombo.isPending || comboSelection.length < 2 || availablePacksToBuild < 1 || !comboTitle.trim() || !Number.isFinite(Number(comboProfitValue)) || Number(comboProfitValue) <= 0}><Layers size={15}/>{createCombo.isPending ? "Creando..." : "Crear combo"}</button>
               </div>
             </div>
           </section>
@@ -623,12 +636,17 @@ export default function ResellerCatalogPage() {
                 const values = component.variants.filter((variant) => variant.stock > 0).map((variant) => variant.wholesalePrice);
                 return sum + (values.length ? Math.max(...values) : component.product.wholesalePrice) * component.quantity;
               }, 0);
+              const availablePacks = combo.components.length
+                ? Math.min(...combo.components.map((component) =>
+                    Math.max(0, ...component.variants.map((variant) => Math.floor(variant.stock / component.quantity))),
+                  ))
+                : 0;
               return <article className="reseller-combo-card" key={combo._id}>
                 <div className="reseller-combo-images">{combo.components.map((component) => {
                   const image = component.product.images?.find((entry) => entry.isPrimary) ?? component.product.images?.[0];
                   return <span key={component.productId}>{image ? <img src={image.url} alt={component.product.title}/> : <Package size={18}/>}</span>;
                 })}<span className="reseller-combo-mark"><Layers size={14}/> COMBO</span></div>
-                <div className="reseller-combo-card-copy"><h3>{combo.title}</h3><p>{combo.components.map((component) => component.quantity + " × " + component.product.title).join(" · ")}</p><strong>{money(comboSellingPrice(baseMin, combo.profitMode, combo.profitValue))}{baseMax !== baseMin ? " – " + money(comboSellingPrice(baseMax, combo.profitMode, combo.profitValue)) : ""}</strong></div>
+                <div className="reseller-combo-card-copy"><h3>{combo.title}</h3><p>{combo.components.map((component) => component.quantity + " × " + component.product.title).join(" · ")}</p><small>{availablePacks} {availablePacks === 1 ? "pack disponible" : "packs disponibles"}</small><strong>{money(comboSellingPrice(baseMin, combo.profitMode, combo.profitValue))}{baseMax !== baseMin ? " – " + money(comboSellingPrice(baseMax, combo.profitMode, combo.profitValue)) : ""}</strong></div>
                 <button type="button" className="product-card-action danger" onClick={() => { if (window.confirm("¿Retirar este combo? Los productos originales no se modificarán.")) removeCombo.mutate(combo._id); }} disabled={removeCombo.isPending}><Trash2 size={14}/> Retirar combo</button>
               </article>;
             })}
