@@ -210,10 +210,14 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
         ))
       : 0;
     const available = availablePacks > 0;
-    const minBase = components.reduce((sum: number, component: any) =>
-      sum + Math.min(...component.variants.map((variant: any) => variant.wholesalePrice)) * component.quantity, 0);
-    const maxBase = components.reduce((sum: number, component: any) =>
-      sum + Math.max(...component.variants.map((variant: any) => variant.wholesalePrice)) * component.quantity, 0);
+    const minBase = components.reduce((sum: number, component: any) => {
+      const prices = component.variants.map((variant: any) => variant.wholesalePrice);
+      return sum + (prices.length ? Math.min(...prices) : 0) * component.quantity;
+    }, 0);
+    const maxBase = components.reduce((sum: number, component: any) => {
+      const prices = component.variants.map((variant: any) => variant.wholesalePrice);
+      return sum + (prices.length ? Math.max(...prices) : 0) * component.quantity;
+    }, 0);
     const applyProfit = (base: number) => Number((combo.profitMode === "PERCENT"
       ? base * (1 + Number(combo.profitValue) / 100)
       : base + Number(combo.profitValue)).toFixed(2));
