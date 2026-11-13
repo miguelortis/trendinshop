@@ -30,6 +30,7 @@ type Props = {
   description: string;
   profitMode: "FIXED" | "PERCENT";
   profitValue: number;
+  availablePacks: number;
   components: Component[];
 };
 
@@ -55,7 +56,7 @@ export function PublicComboControls(props: Props) {
   const [activeGalleryKey, setActiveGalleryKey] = useState<string | null>(null);
 
   const selected = useMemo(() => props.components.map((component) => {
-    const available = component.variants.filter((variant) => variant.stock > 0);
+    const available = component.variants.filter((variant) => variant.stock >= component.quantity);
     const names = optionNames(available);
     const chosen = selection[component.productId] ?? {};
     let variant: Variant | undefined;
@@ -98,7 +99,7 @@ export function PublicComboControls(props: Props) {
   const activeGalleryImage = gallery.find((image) => image.key === activeGalleryKey) ?? gallery[0];
 
   function matching(component: Component, next: Record<string, string>, ignoreName?: string) {
-    const variants = component.variants.filter((variant) => variant.stock > 0);
+    const variants = component.variants.filter((variant) => variant.stock >= component.quantity);
     return variants.filter((variant) => variant.options.every((option) =>
       option.name.trim() === ignoreName || !next[option.name.trim()] || next[option.name.trim()] === option.value.trim(),
     ));
@@ -214,7 +215,7 @@ export function PublicComboControls(props: Props) {
                     <div className="public-combo-option-values">{available.map((item) => <button type="button" key={item.id} className={variant?.id === item.id ? "selected" : ""} onClick={() => choosePlainVariant(component, item.id)}>{item.label}</button>)}</div>
                   </div>
                 ) : variant ? <p className="public-combo-auto-selection">Opción única · {variant.label}</p> : null}
-                {variant ? <small className="public-combo-stock-note">{variant.stock} disponibles</small> : null}
+                {variant ? <small className="public-combo-stock-note">{variant.stock} unidades de esta variante · {component.quantity} por pack</small> : null}
               </section>
             );
           })}
@@ -224,6 +225,10 @@ export function PublicComboControls(props: Props) {
           <span>{complete ? "Precio del combo" : "Precio estimado desde"}</span>
           <strong>{money(price || props.profitValue)}</strong>
           <small>El precio se calcula según las variantes seleccionadas.</small>
+        </div>
+        <div className="public-combo-stock-summary">
+          <span>{complete ? "Packs disponibles con estas variantes" : "Packs disponibles (estimado)"}</span>
+          <strong>{complete ? maxComboQuantity : props.availablePacks}</strong>
         </div>
         <div className="public-cart-controls-bottom">
           <div className="public-cart-quantity-picker">
