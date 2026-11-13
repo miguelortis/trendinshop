@@ -1,6 +1,6 @@
 import { model, models, Schema, type InferSchemaType } from "mongoose";
 
-const publicOrderItemSchema = new Schema(
+const publicOrderComboComponentSchema = new Schema(
   {
     productId: { type: Schema.Types.ObjectId, ref: "Product", required: true },
     variantId: { type: Schema.Types.ObjectId, ref: "ProductVariant", required: true },
@@ -8,6 +8,25 @@ const publicOrderItemSchema = new Schema(
     productSku: { type: String, required: true, trim: true },
     variantLabel: { type: String, required: true, trim: true },
     variantSku: { type: String, required: true, trim: true },
+    quantity: { type: Number, required: true, min: 1 },
+    unitCost: { type: Number, required: true, min: 0 },
+    stockAtRequest: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const publicOrderItemSchema = new Schema(
+  {
+    kind: { type: String, enum: ["PRODUCT", "COMBO"], default: "PRODUCT", required: true },
+    comboId: { type: Schema.Types.ObjectId, ref: "ResellerCombo", default: null },
+    comboTitle: { type: String, trim: true, default: "" },
+    components: { type: [publicOrderComboComponentSchema], default: [] },
+    productId: { type: Schema.Types.ObjectId, ref: "Product", default: null },
+    variantId: { type: Schema.Types.ObjectId, ref: "ProductVariant", default: null },
+    productTitle: { type: String, required: true, trim: true },
+    productSku: { type: String, trim: true, default: "" },
+    variantLabel: { type: String, trim: true, default: "" },
+    variantSku: { type: String, trim: true, default: "" },
     quantity: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true, min: 0.01 },
     lineTotal: { type: Number, required: true, min: 0.01 },
@@ -35,7 +54,14 @@ const publicOrderSchema = new Schema(
     resellerRole: { type: String, enum: ["ADMIN", "RESELLER"], required: true },
     customer: { type: publicOrderCustomerSchema, required: true },
     customerProfileId: { type: Schema.Types.ObjectId, ref: "CustomerIdentity", default: null, index: true },
-    items: { type: [publicOrderItemSchema], required: true, validate: (items: unknown[]) => items.length > 0 },
+    items: {
+      type: [publicOrderItemSchema],
+      required: true,
+      validate: (items: any[]) => items.length > 0 && items.every((item) =>
+        item.kind === "COMBO"
+          ? Boolean(item.comboId) && Array.isArray(item.components) && item.components.length >= 2 && item.components.length <= 5
+          : Boolean(item.productId) && Boolean(item.variantId)),
+    },
     subtotal: { type: Number, required: true, min: 0.01 },
     note: { type: String, trim: true, default: "" },
     status: {

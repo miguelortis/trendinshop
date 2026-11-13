@@ -7,6 +7,7 @@ import { CategoryModel } from "@/models/Category";
 import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
+import { ResellerComboModel } from "@/models/ResellerCombo";
 import { UserModel } from "@/models/User";
 import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
 
@@ -46,6 +47,7 @@ type ProductRecord = {
   description?: string;
   categoryId?: mongoose.Types.ObjectId | string | null;
   images?: ProductImageRecord[];
+  wholesalePrice?: number;
 };
 type CategoryRecord = { _id: mongoose.Types.ObjectId; name: string };
 
@@ -55,6 +57,8 @@ type VariantRecord = {
   label: string;
   options?: { name: string; value: string }[];
   stock: number;
+  wholesalePrice?: number | null;
+  images?: ProductImageRecord[];
 };
 
 type PublicCatalogProduct = {
@@ -68,9 +72,18 @@ type PublicCatalogProduct = {
   variants: { id: string; label: string; stock: number; sellingPrice: number }[];
 };
 
+type PublicCatalogCombo = {
+  id: string; title: string; description: string; available: boolean; availablePacks: number;
+  images: ProductImageRecord[]; minPrice: number; maxPrice: number;
+  components: {
+    productId: string; title: string; quantity: number; images: ProductImageRecord[];
+    variants: { id: string; label: string; options: { name: string; value: string }[]; stock: number; wholesalePrice: number; images: ProductImageRecord[] }[];
+  }[];
+};
 type PublicCatalogData = {
   reseller: { id: string; name: string; description: string; contactWhatsApp: string; logoUrl: string; slug: string };
   products: PublicCatalogProduct[];
+  combos: PublicCatalogCombo[];
 };
 
 function safeImageUrl(value: string) {
@@ -121,83 +134,104 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     slug: reseller.storeSlug?.trim() || String(reseller._id),
   };
 
-  const catalogItems = await ResellerCatalogItemModel.find({
-    resellerId: reseller._id,
-    isActive: true,
-  })
-    .sort({ updatedAt: -1 })
-    .lean() as unknown as CatalogItemRecord[];
-
-  if (!catalogItems.length) {
-    return {
-      reseller: identity,
-      products: [],
-    };
-  }
-
-  const productIds = catalogItems.map((item) => item.productId);
-  const [products, variants] = await Promise.all([
-    ProductModel.find({ _id: { $in: productIds }, isActive: true })
-      .select("_id title description categoryId images")
-      .lean() as unknown as Promise<ProductRecord[]>,
-    ProductVariantModel.find({ productId: { $in: productIds }, isActive: true })
-      .select("_id productId label options stock")
-      .lean() as unknown as Promise<VariantRecord[]>,
+  const [catalogItems, resellerCombos] = await Promise.all([
+    ResellerCatalogItemModel.find({ resellerId: reseller._id, isActive: true })
+      .sort({ updatedAt: -1 }).lean() as unknown as Promise<CatalogItemRecord[]>,
+    ResellerComboModel.find({ resellerId: reseller._id, isActive: true }).sort({ updatedAt: -1 }).lean() as any,
   ]);
 
-  // Consulta las categorías explícitamente: las rutas públicas pueden ejecutarse
-  // en una instancia serverless donde el modelo Category aún no esté registrado
-  // para usar populate().
+  const comboProductIds = (resellerCombos as any[]).flatMap((combo) =>
+    (combo.components ?? []).map((component: any) => component.productId),
+  );
+  const productIds = [...new Set([...catalogItems.map((item) => String(item.productId)), ...comboProductIds.map(String)])]
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const [products, variants] = productIds.length ? await Promise.all([
+    ProductModel.find({ _id: { $in: productIds }, isActive: true })
+      .select("_id title description categoryId images wholesalePrice")
+      .lean() as unknown as Promise<ProductRecord[]>,
+    ProductVariantModel.find({ productId: { $in: productIds }, isActive: true })
+      .select("_id productId label options stock wholesalePrice images")
+      .lean() as unknown as Promise<VariantRecord[]>,
+  ]) : [[], []];
+
   const categoryIds = [...new Set(products.map((product) => product.categoryId ? String(product.categoryId) : "").filter(Boolean))];
   const categories: CategoryRecord[] = categoryIds.length
     ? await CategoryModel.find({ _id: { $in: categoryIds } }).select("_id name").lean() as unknown as CategoryRecord[]
     : [];
   const categoryById = new Map(categories.map((category) => [String(category._id), category.name]));
-
-  const productById = new Map<string, ProductRecord>(
-    products.map((product) => [String(product._id), product]),
-  );
+  const productById = new Map<string, ProductRecord>(products.map((product) => [String(product._id), product]));
   const variantsByProductId = new Map<string, VariantRecord[]>();
   for (const variant of variants) {
     const productId = String(variant.productId);
-    const list = variantsByProductId.get(productId) ?? [];
-    list.push(variant);
-    variantsByProductId.set(productId, list);
+    variantsByProductId.set(productId, [...(variantsByProductId.get(productId) ?? []), variant]);
   }
+
+  const safeImages = (images?: ProductImageRecord[]) =>
+    (images ?? []).map((image) => ({ ...image, url: safeImageUrl(image.url) })).filter((image) => Boolean(image.url));
 
   const productsForCatalog = catalogItems.flatMap((item) => {
     const id = String(item.productId);
     const product = productById.get(id);
     if (!product) return [];
-
     const productVariants = variantsByProductId.get(id) ?? [];
     const availableVariants = productVariants.filter((variant) => variant.stock > 0);
-    const images = (product.images ?? [])
-      .map((image) => ({ ...image, url: safeImageUrl(image.url) }))
-      .filter((image) => Boolean(image.url));
-
     const category = categoryById.get(product.categoryId ? String(product.categoryId) : "") || "General";
-
     return [{
-      id,
-      title: product.title,
-      description: product.description ?? "",
-      category,
-      images,
-      sellingPrice: item.sellingPrice,
+      id, title: product.title, description: product.description ?? "", category,
+      images: safeImages(product.images), sellingPrice: item.sellingPrice,
       available: availableVariants.length > 0,
       variants: availableVariants.map((variant) => ({
-        id: String(variant._id),
-        label: variantLabel(variant),
-        stock: variant.stock,
+        id: String(variant._id), label: variantLabel(variant), stock: variant.stock,
         sellingPrice: item.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? item.sellingPrice,
       })),
+    }];
+  });
+
+  const combosForCatalog = (resellerCombos as any[]).flatMap((combo: any) => {
+    const components = (combo.components ?? []).flatMap((component: any) => {
+      const id = String(component.productId);
+      const product = productById.get(id);
+      if (!product) return [];
+      const componentVariants = (variantsByProductId.get(id) ?? []).filter((variant) => variant.stock > 0);
+      const variantOptions = componentVariants.map((variant) => ({
+        id: String(variant._id), label: variantLabel(variant), options: variant.options ?? [],
+        stock: variant.stock, wholesalePrice: Number(variant.wholesalePrice ?? product.wholesalePrice ?? 0),
+        images: safeImages(variant.images),
+      }));
+      return [{
+        productId: id, title: product.title, quantity: Number(component.quantity ?? 1),
+        images: safeImages(product.images), variants: variantOptions,
+      }];
+    });
+    if (components.length !== (combo.components ?? []).length) return [];
+    const availablePacks = components.length
+      ? Math.min(...components.map((component: any) =>
+          Math.max(0, ...component.variants.map((variant: any) => Math.floor(variant.stock / component.quantity))),
+        ))
+      : 0;
+    const available = availablePacks > 0;
+    const minBase = components.reduce((sum: number, component: any) => {
+      const prices = component.variants.map((variant: any) => variant.wholesalePrice);
+      return sum + (prices.length ? Math.min(...prices) : 0) * component.quantity;
+    }, 0);
+    const maxBase = components.reduce((sum: number, component: any) => {
+      const prices = component.variants.map((variant: any) => variant.wholesalePrice);
+      return sum + (prices.length ? Math.max(...prices) : 0) * component.quantity;
+    }, 0);
+    const applyProfit = (base: number) => Number((combo.profitMode === "PERCENT"
+      ? base * (1 + Number(combo.profitValue) / 100)
+      : base + Number(combo.profitValue)).toFixed(2));
+    const images = components.flatMap((component: any) => component.images.slice(0, 1));
+    return [{
+      id: String(combo._id), title: combo.title, description: combo.description ?? "",
+      available, availablePacks, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
     }];
   });
 
   return {
     reseller: identity,
     products: productsForCatalog,
+    combos: combosForCatalog,
   };
 }
 
@@ -220,10 +254,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   const title = "Catálogo de " + (catalog.reseller.name || "revendedor");
-  const description = catalog.reseller.description || (catalog.products.length
-    ? "Explora " + catalog.products.length + (catalog.products.length === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
+  const publicItemCount = catalog.products.length + catalog.combos.length;
+  const description = catalog.reseller.description || (publicItemCount
+    ? "Explora " + publicItemCount + (publicItemCount === 1 ? " producto disponible" : " productos disponibles") + " en el catálogo de " + catalog.reseller.name + "."
     : "Pronto habrá productos disponibles en el catálogo de " + catalog.reseller.name + ".");
-  const image = catalog.products.flatMap((product) => product.images)[0]?.url || catalog.reseller.logoUrl;
+  const image = catalog.products.flatMap((product) => product.images)[0]?.url || catalog.combos.flatMap((combo) => combo.images)[0]?.url || catalog.reseller.logoUrl;
   const images = image ? [{ url: image }] : undefined;
 
   return {
@@ -270,7 +305,9 @@ export default async function PublicCatalogPage({ params }: PageProps) {
           </div>
         </section>
 
-        {catalog.products.length ? (
+        {catalog.products.length || catalog.combos.length ? (
+          <>
+          {catalog.products.length ? (
           <section className="public-catalog-grid" aria-label="Productos del catálogo">
             {catalog.products.map((product) => {
               const image = product.images.find((item) => item.isPrimary) ?? product.images[0];
@@ -308,6 +345,33 @@ export default async function PublicCatalogPage({ params }: PageProps) {
               );
             })}
           </section>
+          ) : null}
+          {catalog.combos.length ? (
+            <section className="public-combo-grid" aria-label="Combos disponibles">
+              {catalog.combos.map((combo) => {
+                const image = combo.images[0];
+                return (
+                  <article className="public-catalog-card public-combo-catalog-card" key={combo.id}>
+                    <Link href={"/tienda/" + resellerId + "/combo/" + combo.id} className="public-catalog-image">
+                      <div className="public-combo-card-images">
+                        {combo.images.slice(0, 4).map((entry, index) => <img key={entry.url + index} src={entry.url} alt={entry.alt || combo.title} loading="lazy" decoding="async"/>)}
+                      </div>
+                      <span className="public-combo-card-badge">COMBO · {combo.components.length} productos</span>
+                      <span className={combo.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>{combo.available ? combo.availablePacks + (combo.availablePacks === 1 ? " pack disponible" : " packs disponibles") : "Agotado"}</span>
+                    </Link>
+                    <div className="public-catalog-card-body">
+                      <span className="public-catalog-category">Combo</span>
+                      <h2><Link href={"/tienda/" + resellerId + "/combo/" + combo.id}>{combo.title}</Link></h2>
+                      {combo.description ? <p className="public-catalog-description">{combo.description}</p> : null}
+                      <div className="public-combo-includes">{combo.components.map((component) => <span key={component.productId}>{component.quantity} × {component.title}</span>)}</div>
+                      <div className="public-catalog-price-row"><span>Precio del combo</span><strong>{combo.minPrice === combo.maxPrice ? money(combo.minPrice) : "Desde " + money(combo.minPrice)}</strong></div>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          ) : null}
+          </>
         ) : (
           <section className="public-catalog-empty">
             <div className="public-catalog-empty-mark">T</div>

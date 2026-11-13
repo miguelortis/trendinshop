@@ -8,11 +8,21 @@ const variantOptionSchema = new Schema(
   { _id: false },
 );
 
+const productImageSchema = new Schema(
+  {
+    url: { type: String, required: true, trim: true },
+    alt: { type: String, default: "" },
+    isPrimary: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const productVariantSchema = new Schema(
   {
     productId: { type: Schema.Types.ObjectId, ref: "Product", required: true, index: true },
     label: { type: String, required: true, trim: true },
     options: { type: [variantOptionSchema], default: [] },
+    images: { type: [productImageSchema], default: [] },
     sku: { type: String, required: true, trim: true, uppercase: true, unique: true, index: true },
     purchasePrice: { type: Number, min: 0, default: null },
     wholesalePrice: { type: Number, min: 0, default: null },

@@ -9,6 +9,7 @@ import {
 import { getAuthenticatedUser, unauthorized } from "@/lib/api/auth-context";
 import { createCategory, getProductById, listCategories, listProducts } from "@/lib/api/catalog";
 import { createProduct, updateProduct } from "@/lib/api/products";
+import { createResellerCombo, listResellerCombos, removeResellerCombo, updateResellerCombo } from "@/lib/api/combos";
 import {
   addResellerCatalogItem,
   listResellerCatalog,
@@ -97,6 +98,13 @@ export async function apiRouter(request: Request, context: RouteContext): Promis
     if (method === "DELETE" && action) {
       return removeResellerCatalogItem(action, user.id, user.role);
     }
+  }
+
+  if (resource === "combos") {
+    if (method === "GET" && !action) return listResellerCombos(user.id, user.role);
+    if (method === "POST" && !action) return createResellerCombo(request, user.id, user.role);
+    if ((method === "PATCH" || method === "PUT") && action) return updateResellerCombo(request, action, user.id, user.role);
+    if (method === "DELETE" && action) return removeResellerCombo(action, user.id, user.role);
   }
 
   if (resource === "products") {
