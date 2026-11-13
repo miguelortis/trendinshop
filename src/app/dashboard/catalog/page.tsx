@@ -65,7 +65,7 @@ export default function ResellerCatalogPage() {
   const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addMenuProductId, setAddMenuProductId] = useState<string | null>(null);
   const [comboBuilderOpen, setComboBuilderOpen] = useState(false);
   const [comboSearch, setComboSearch] = useState("");
   const [comboSelection, setComboSelection] = useState<string[]>([]);
@@ -259,45 +259,6 @@ export default function ResellerCatalogPage() {
           <p>Agrega productos individuales o agrupa varios para crear combos personalizables.</p>
         </div>
         <div className="reseller-catalog-heading-actions">
-          <div className="reseller-add-menu">
-            <button
-              type="button"
-              className="product-card-action primary"
-              aria-haspopup="menu"
-              aria-expanded={addMenuOpen}
-              onClick={() => setAddMenuOpen((open) => !open)}
-            >
-              <Plus size={14} /> Agregar al catálogo
-            </button>
-            {addMenuOpen ? (
-              <div className="reseller-add-menu-panel" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    setActiveTab("explore");
-                    setSearch("");
-                    setActionError("");
-                  }}
-                >
-                  <Package size={17} />
-                  <span><strong>Producto individual</strong><small>Seleccionar un producto y agregarlo normalmente.</small></span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    openComboBuilder();
-                  }}
-                >
-                  <Layers size={17} />
-                  <span><strong>Crear combo</strong><small>Agrupar de 2 a 5 productos en una sola publicación.</small></span>
-                </button>
-              </div>
-            ) : null}
-          </div>
           <Link
             href={"/tienda/" + user.id}
             target="_blank"
@@ -514,14 +475,44 @@ export default function ResellerCatalogPage() {
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          className="product-card-action primary"
-                          disabled={product.availableStock <= 0}
-                          onClick={() => openEditor(product)}
-                        >
-                          <Plus size={14} /> Añadir a mi catálogo
-                        </button>
+                        <div className="reseller-card-add-menu">
+                          <button
+                            type="button"
+                            className="product-card-action primary"
+                            disabled={product.availableStock <= 0}
+                            aria-haspopup="menu"
+                            aria-expanded={addMenuProductId === product._id}
+                            onClick={() => setAddMenuProductId((current) => current === product._id ? null : product._id)}
+                          >
+                            <Plus size={14} /> Añadir a mi catálogo
+                          </button>
+                          {addMenuProductId === product._id ? (
+                            <div className="reseller-card-add-menu-panel" role="menu">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setAddMenuProductId(null);
+                                  openEditor(product);
+                                }}
+                              >
+                                <Package size={17} />
+                                <span><strong>Producto individual</strong><small>Añadir este producto a tu catálogo.</small></span>
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setAddMenuProductId(null);
+                                  openComboBuilder(product._id);
+                                }}
+                              >
+                                <Layers size={17} />
+                                <span><strong>Crear Pack</strong><small>Incluir este producto en un pack.</small></span>
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
                   )}
