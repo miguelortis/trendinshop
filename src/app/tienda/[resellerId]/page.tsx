@@ -73,7 +73,7 @@ type PublicCatalogProduct = {
 };
 
 type PublicCatalogCombo = {
-  id: string; title: string; description: string; available: boolean;
+  id: string; title: string; description: string; available: boolean; availablePacks: number;
   images: ProductImageRecord[]; minPrice: number; maxPrice: number;
   components: {
     productId: string; title: string; quantity: number; images: ProductImageRecord[];
@@ -204,7 +204,12 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       }];
     });
     if (components.length !== (combo.components ?? []).length) return [];
-    const available = components.every((component: any) => component.variants.length > 0);
+    const availablePacks = components.length
+      ? Math.min(...components.map((component: any) =>
+          Math.max(0, ...component.variants.map((variant: any) => Math.floor(variant.stock / component.quantity))),
+        ))
+      : 0;
+    const available = availablePacks > 0;
     const minBase = components.reduce((sum: number, component: any) =>
       sum + Math.min(...component.variants.map((variant: any) => variant.wholesalePrice)) * component.quantity, 0);
     const maxBase = components.reduce((sum: number, component: any) =>
@@ -215,7 +220,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     const images = components.flatMap((component: any) => component.images.slice(0, 1));
     return [{
       id: String(combo._id), title: combo.title, description: combo.description ?? "",
-      available, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
+      available, availablePacks, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
     }];
   });
 
@@ -348,7 +353,7 @@ export default async function PublicCatalogPage({ params }: PageProps) {
                         {combo.images.slice(0, 4).map((entry, index) => <img key={entry.url + index} src={entry.url} alt={entry.alt || combo.title} loading="lazy" decoding="async"/>)}
                       </div>
                       <span className="public-combo-card-badge">COMBO · {combo.components.length} productos</span>
-                      <span className={combo.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>{combo.available ? "Disponible" : "Agotado"}</span>
+                      <span className={combo.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>{combo.available ? combo.availablePacks + (combo.availablePacks === 1 ? " pack disponible" : " packs disponibles") : "Agotado"}</span>
                     </Link>
                     <div className="public-catalog-card-body">
                       <span className="public-catalog-category">Combo</span>
