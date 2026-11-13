@@ -64,7 +64,9 @@ async function validateComponents(components: ComponentInput[]) {
     const key = String(variant.productId);
     byProduct.set(key, [...(byProduct.get(key) ?? []), variant]);
   }
-  if (components.some((item) => !(byProduct.get(item.productId)?.length))) return null;
+  if (components.some((item) =>
+    !(byProduct.get(item.productId) ?? []).some((variant) => variant.stock >= item.quantity),
+  )) return null;
   return { products, variants, byProduct };
 }
 function serializeCombo(combo: any, productById: Map<string, any>, variantsByProduct: Map<string, any[]>) {
