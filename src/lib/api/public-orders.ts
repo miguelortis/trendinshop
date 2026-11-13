@@ -422,7 +422,7 @@ export async function createPublicOrder(request: Request, buyerId: string) {
       // an individual product) can consume the same variant in one order.
       const requiredByVariant = new Map<string, number>();
       for (const item of normalizedItems) {
-        if (item.kind === "COMBO") {
+        if ("components" in item) {
           for (const component of item.components ?? []) {
             const variantId = String(component.variantId);
             requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(component.quantity) * Number(item.quantity));
