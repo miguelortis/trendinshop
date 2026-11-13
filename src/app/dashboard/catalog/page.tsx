@@ -339,7 +339,7 @@ export default function ResellerCatalogPage() {
             const isEditing = editingProductId === product._id;
 
             return (
-              <article className="product-card reseller-catalog-card" key={product._id}>
+              <article className={`product-card reseller-catalog-card ${addMenuProductId === product._id ? "add-menu-open" : ""}`} key={product._id}>
                 <div className="product-card-image reseller-catalog-image">
                   {primaryImage ? (
                     <img src={primaryImage.url} alt={primaryImage.alt || product.title} loading="lazy" decoding="async" />
