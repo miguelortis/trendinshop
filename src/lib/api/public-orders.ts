@@ -418,6 +418,32 @@ export async function createPublicOrder(request: Request, buyerId: string) {
         }], { session: session! });
       }
 
+      // Validate aggregate demand across every line. Different combos (or a combo and
+      // an individual product) can consume the same variant in one order.
+      const requiredByVariant = new Map<string, number>();
+      for (const item of normalizedItems) {
+        if (item.kind === "COMBO") {
+          for (const component of item.components ?? []) {
+            const variantId = String(component.variantId);
+            requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(component.quantity) * Number(item.quantity));
+          }
+        } else {
+          const variantId = String(item.variantId);
+          requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(item.quantity));
+        }
+      }
+      for (const [variantId, required] of requiredByVariant) {
+        const variant = variantById.get(variantId);
+        if (!variant || variant.stock < required) {
+          const product = variant ? productById.get(String(variant.productId)) : null;
+          throw new PublicOrderError(
+            "La cantidad total solicitada supera las existencias de " + (product?.title ?? "una variante") + ". Disponibles: " + (variant?.stock ?? 0) + ".",
+            409,
+            "INSUFFICIENT_AGGREGATE_STOCK",
+          );
+        }
+      }
+
       const subtotal = fromCents(normalizedItems.reduce((sum, item) => sum + toCents(item.lineTotal), 0));
       const created = await PublicOrderModel.create([{
         orderNumber: orderNumber(),
