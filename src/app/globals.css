@@ -3836,28 +3836,26 @@ button, input, select, textarea { font: inherit; }
 }
 
 
-/* Unified add-to-catalog menu: individual products and combos share one entry point. */
-.reseller-add-menu { position:relative; display:inline-flex; }
-.reseller-add-menu-panel {
-  position:absolute; top:calc(100% + 8px); right:0; z-index:40;
+/* Per-product add menu: choose an individual listing or create a pack from this product. */
+.reseller-card-add-menu { position:relative; display:block; width:100%; }
+.reseller-card-add-menu > button { width:100%; justify-content:center; }
+.reseller-card-add-menu-panel {
+  position:absolute; right:0; bottom:calc(100% + 8px); z-index:45;
   display:grid; width:min(330px,calc(100vw - 32px)); padding:6px;
   border:1px solid var(--border,#e4e7ec); border-radius:13px;
   background:var(--surface,#fff); box-shadow:0 14px 36px rgba(16,24,40,.18);
 }
-.reseller-add-menu-panel button {
+.reseller-card-add-menu-panel button {
   display:flex; align-items:flex-start; gap:11px; width:100%; padding:12px 10px;
   border:0; border-radius:9px; color:var(--foreground,#344054);
   background:transparent; text-align:left; cursor:pointer;
 }
-.reseller-add-menu-panel button:hover,
-.reseller-add-menu-panel button:focus-visible { background:var(--surface-secondary,#f2f4f7); outline:none; }
-.reseller-add-menu-panel button > svg { flex:0 0 auto; margin-top:2px; }
-.reseller-add-menu-panel button span { display:grid; gap:3px; min-width:0; }
-.reseller-add-menu-panel button strong { font-size:13px; font-weight:700; }
-.reseller-add-menu-panel button small { color:var(--muted-foreground,#667085); font-size:11px; line-height:1.4; }
+.reseller-card-add-menu-panel button:hover,
+.reseller-card-add-menu-panel button:focus-visible { background:var(--surface-secondary,#f2f4f7); outline:none; }
+.reseller-card-add-menu-panel button > svg { flex:0 0 auto; margin-top:2px; }
+.reseller-card-add-menu-panel button span { display:grid; gap:3px; min-width:0; }
+.reseller-card-add-menu-panel button strong { font-size:13px; font-weight:700; }
+.reseller-card-add-menu-panel button small { color:var(--muted-foreground,#667085); font-size:11px; line-height:1.4; }
 @media (max-width:640px) {
-  .reseller-catalog-heading-actions { flex-wrap:wrap; }
-  .reseller-add-menu { flex:1 1 100%; }
-  .reseller-add-menu > button { justify-content:center; width:100%; min-height:42px; }
-  .reseller-add-menu-panel { right:auto; left:0; width:100%; }
+  .reseller-card-add-menu-panel { right:0; left:auto; width:min(330px,calc(100vw - 48px)); }
 }
