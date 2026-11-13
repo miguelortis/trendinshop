@@ -271,7 +271,7 @@ async function hydrateCartItems(
   const requiredByVariant = new Map<string, number>();
   const stockByVariant = new Map<string, number>();
   for (const item of hydratedItems) {
-    if (item.kind === "COMBO") {
+    if ("components" in item) {
       for (const component of item.components ?? []) {
         const variantId = String(component.variantId);
         requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(component.quantity) * Number(item.quantity));
@@ -292,7 +292,7 @@ async function hydrateCartItems(
   }
 
   return hydratedItems.map((item) => {
-    const hasInsufficientComponent = item.kind === "COMBO"
+    const hasInsufficientComponent = "components" in item
       ? (item.components ?? []).some((component: any) => insufficientVariants.has(String(component.variantId)))
       : insufficientVariants.has(String(item.variantId));
     return hasInsufficientComponent ? { ...item, available: false } : item;
