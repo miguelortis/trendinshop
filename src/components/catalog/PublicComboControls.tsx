@@ -197,7 +197,7 @@ export function PublicComboControls(props: Props) {
                   <div><strong>{component.title}</strong><small>{component.quantity} {component.quantity === 1 ? "unidad incluida" : "unidades incluidas"}</small></div>
                   {variant ? <span className="public-combo-component-check"><Check size={14}/></span> : null}
                 </header>
-                {!available.length ? <p className="public-combo-unavailable">Este producto no tiene variantes disponibles.</p> : names.length ? names.map((name) => (
+                {!available.length ? <p className="public-combo-unavailable">No hay existencias suficientes para formar un pack con este producto.</p> : names.length ? names.map((name) => (
                   <div className="public-combo-option-group" key={name}>
                     <div><strong>{name}</strong><span>{chosen[name] || "Selecciona una opción"}</span></div>
                     <div className="public-combo-option-values">
@@ -230,6 +230,7 @@ export function PublicComboControls(props: Props) {
           <span>{complete ? "Packs disponibles con estas variantes" : "Packs disponibles (estimado)"}</span>
           <strong>{complete ? maxComboQuantity : props.availablePacks}</strong>
         </div>
+        <p className="public-combo-quantity-label">Cantidad de packs</p>
         <div className="public-cart-controls-bottom">
           <div className="public-cart-quantity-picker">
             <button type="button" aria-label="Reducir cantidad" onClick={() => setQuantity((value) => Math.max(1, value - 1))} disabled={quantity <= 1}><Minus size={14}/></button>
