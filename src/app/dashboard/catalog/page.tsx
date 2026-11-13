@@ -589,7 +589,7 @@ export default function ResellerCatalogPage() {
                 return <button type="button" key={product._id} className={"combo-builder-product" + (selected ? " selected" : "")} onClick={() => toggleComboProduct(product._id)} disabled={!selected && comboSelection.length >= 5}>
                   <span className={"combo-builder-check" + (selected ? " checked" : "")}>{selected ? <Check size={14}/> : null}</span>
                   <span className="combo-builder-product-image">{image ? <img src={image.url} alt={image.alt || product.title}/> : <Package size={20}/>}</span>
-                  <span className="combo-builder-product-copy"><strong>{product.title}</strong><small>SKU {product.sku} · {product.availableStock} disponibles</small></span>
+                  <span className="combo-builder-product-copy"><strong>{product.title}</strong><small>SKU {product.sku} · {product.availableStock} unidades en inventario</small></span>
                   <strong className="combo-builder-product-price">{money(product.wholesalePrice)}</strong>
                 </button>;
               })}
