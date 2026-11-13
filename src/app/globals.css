@@ -3837,11 +3837,13 @@ button, input, select, textarea { font: inherit; }
 
 
 /* Per-product add menu: choose an individual listing or create a pack from this product. */
+.reseller-catalog-card.add-menu-open { position:relative; z-index:30; overflow:visible; }
+.reseller-catalog-card.add-menu-open .reseller-catalog-image { border-radius:16px 16px 0 0; }
 .reseller-card-add-menu { position:relative; display:block; width:100%; }
 .reseller-card-add-menu > button { width:100%; justify-content:center; }
 .reseller-card-add-menu-panel {
   position:absolute; right:0; bottom:calc(100% + 8px); z-index:45;
-  display:grid; width:min(330px,calc(100vw - 32px)); padding:6px;
+  display:grid; width:100%; min-width:0; padding:6px;
   border:1px solid var(--border,#e4e7ec); border-radius:13px;
   background:var(--surface,#fff); box-shadow:0 14px 36px rgba(16,24,40,.18);
 }
@@ -3856,6 +3858,3 @@ button, input, select, textarea { font: inherit; }
 .reseller-card-add-menu-panel button span { display:grid; gap:3px; min-width:0; }
 .reseller-card-add-menu-panel button strong { font-size:13px; font-weight:700; }
 .reseller-card-add-menu-panel button small { color:var(--muted-foreground,#667085); font-size:11px; line-height:1.4; }
-@media (max-width:640px) {
-  .reseller-card-add-menu-panel { right:0; left:auto; width:min(330px,calc(100vw - 48px)); }
-}
