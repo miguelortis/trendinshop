@@ -87,7 +87,14 @@ async function getCombo(resellerId: string, comboId: string) {
       title: String(combo.title),
       description: String(combo.description ?? ""),
       components,
-      available: components.every((component: any) => component.variants.length > 0),
+      availablePacks: components.length
+      ? Math.min(...components.map((component: any) =>
+          Math.max(0, ...component.variants.map((variant: any) => Math.floor(variant.stock / component.quantity))),
+        ))
+      : 0,
+    available: components.length > 0 && components.every((component: any) =>
+      component.variants.some((variant: any) => variant.stock >= component.quantity),
+    ),
     },
   };
 }
@@ -124,6 +131,7 @@ export default async function PublicComboPage({ params }: PageProps) {
           description={data.combo.description}
           profitMode={data.profitMode}
           profitValue={data.profitValue}
+          availablePacks={data.combo.availablePacks}
           components={data.combo.components}
         />
         <Link href={"/tienda/" + data.storeSlug} className="public-product-back-link">← Volver al catálogo de {data.sellerName}</Link>
