@@ -240,7 +240,7 @@ async function hydrateComboCartItem(seller: SellerRecord, input: ComboCartInput,
     : base + Number(combo.profitValue)));
   return {
     kind: "COMBO", comboId: input.comboId, productId: input.comboId, variantId: input.variantId,
-    components: components.map(({ stock: _stock, required: _required, ...component }) => component),
+    components: components.map(({ required: _required, ...component }) => component),
     productTitle: combo.title, productSku: "", variantLabel: components.map((component) => component.variantLabel).join(" + "),
     variantSku: "", quantity: input.quantity, unitPrice,
     lineTotal: fromCents(toCents(unitPrice) * input.quantity),
@@ -264,7 +264,39 @@ async function hydrateCartItems(
   const combo = await Promise.all(comboItems.map((item) =>
     hydrateComboCartItem(seller, item, strict, snapshotByCombo.get(item.comboId))));
   const comboByKey = new Map(combo.map((item) => [item.variantId, item]));
-  return items.map((item) => item.kind === "COMBO" ? comboByKey.get(item.variantId)! : regularById.get(item.variantId)!);
+  const hydratedItems = items.map((item) => item.kind === "COMBO" ? comboByKey.get(item.variantId)! : regularById.get(item.variantId)!);
+
+  // A variant can be included by multiple combos, or by a combo and a single item.
+  // Check the cart's total demand rather than validating each line in isolation.
+  const requiredByVariant = new Map<string, number>();
+  const stockByVariant = new Map<string, number>();
+  for (const item of hydratedItems) {
+    if (item.kind === "COMBO") {
+      for (const component of item.components ?? []) {
+        const variantId = String(component.variantId);
+        requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(component.quantity) * Number(item.quantity));
+        stockByVariant.set(variantId, Number(component.stock ?? 0));
+      }
+    } else {
+      const variantId = String(item.variantId);
+      requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(item.quantity));
+      stockByVariant.set(variantId, Number(item.stock ?? 0));
+    }
+  }
+  const insufficientVariants = new Set<string>();
+  for (const [variantId, required] of requiredByVariant) {
+    if ((stockByVariant.get(variantId) ?? 0) < required) insufficientVariants.add(variantId);
+  }
+  if (strict && insufficientVariants.size) {
+    throw new Error("La cantidad total del carrito supera las existencias disponibles de uno o más productos. Ajusta las cantidades e inténtalo de nuevo.");
+  }
+
+  return hydratedItems.map((item) => {
+    const hasInsufficientComponent = item.kind === "COMBO"
+      ? (item.components ?? []).some((component: any) => insufficientVariants.has(String(component.variantId)))
+      : insufficientVariants.has(String(item.variantId));
+    return hasInsufficientComponent ? { ...item, available: false } : item;
+  });
 }
 
 export async function validatePublicCart(request: Request) {
