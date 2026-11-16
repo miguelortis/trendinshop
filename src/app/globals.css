@@ -3859,3 +3859,14 @@ button, input, select, textarea { font: inherit; }
 .reseller-card-add-menu-panel button span { display:grid; gap:3px; min-width:0; }
 .reseller-card-add-menu-panel button strong { font-size:13px; font-weight:700; }
 .reseller-card-add-menu-panel button small { color:var(--muted-foreground,#667085); font-size:11px; line-height:1.4; }
+
+
+/* Keep reseller card controls anchored at the bottom. */
+.reseller-catalog-price-form { display:flex; flex:1; flex-direction:column; }
+.reseller-catalog-price-form .reseller-catalog-card-actions { margin-top:auto; }
+
+/* Open the add menu upward and allow it to extend beyond the card. */
+.reseller-catalog-card-menu-open { position:relative; z-index:8; overflow:visible; }
+.reseller-catalog-card-menu-open:hover { z-index:9; }
+.reseller-card-add-menu { position:relative; }
+.reseller-card-add-menu-panel { position:absolute; right:0; bottom:calc(100% + 8px); left:0; z-index:20; width:100%; }
