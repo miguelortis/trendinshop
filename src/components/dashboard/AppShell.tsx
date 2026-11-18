@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  BarChart3, Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList, HandCoins,
-  LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen,
+  Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList, HandCoins,
+  LayoutDashboard, LogOut, Menu, Package, 
   Settings, ShoppingBag, ShoppingCart, UsersRound, WalletCards, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -36,7 +36,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const {
     data: user,
@@ -92,17 +91,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={collapsed ? "app-shell collapsed" : "app-shell"}>
+    <div className="app-shell">
       <aside className={mobileOpen ? "app-sidebar mobile-open" : "app-sidebar"}>
         <div className="app-sidebar-top">
-          <Logo compact={collapsed} href="/dashboard" />
+          <Logo href="/dashboard" />
           <button className="icon-button mobile-close" onClick={() => setMobileOpen(false)} aria-label="Cerrar menú"><X size={18} /></button>
         </div>
 
         <div className="app-sidebar-user">
           <div className="avatar avatar-gradient">{initials}</div>
-          {!collapsed && <div className="sidebar-user-copy"><strong>{displayName}</strong><span>{roleLabel}</span></div>}
-          {!collapsed && <ChevronDown size={16} className="sidebar-chevron" />}
+          <div className="sidebar-user-copy"><strong>{displayName}</strong><span>{roleLabel}</span></div>
+          <ChevronDown size={16} className="sidebar-chevron" />
         </div>
 
         <nav className="app-nav">
@@ -114,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             return (
               <div key={section.label} className="app-nav-section">
-                {!collapsed && <div className="app-nav-label">{section.label}</div>}
+                <div className="app-nav-label">{section.label}</div>
                 {visibleItems.map((item) => {
                   const Icon = item.icon;
                   const label = item.href === "/dashboard/supplier-payables"
@@ -122,9 +121,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     : item.label;
                   const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
                   return (
-                    <Link key={item.href} href={item.href} title={collapsed ? label : undefined} className={active ? "app-nav-item active" : "app-nav-item"}>
+                    <Link key={item.href} href={item.href} className={active ? "app-nav-item active" : "app-nav-item"}>
                       <Icon size={18} strokeWidth={active ? 2.25 : 2} />
-                      {!collapsed && <span>{label}</span>}
+                      <span>{label}</span>
                     </Link>
                   );
                 })}
@@ -132,23 +131,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-
-        {!collapsed && (
-          <div className="sidebar-help-card">
-            <div className="sidebar-help-icon"><BarChart3 size={17} /></div>
-            <strong>Tu negocio, en un vistazo</strong>
-            <span>Controla inventario, ventas y cuentas pendientes.</span>
-          </div>
-        )}
-
-        <div className="app-sidebar-footer">
-          <button className="collapse-button" onClick={handleLogout} disabled={loggingOut}>
+<div className="app-sidebar-footer">
+          <button className="sidebar-logout-button" onClick={handleLogout} disabled={loggingOut}>
             <LogOut size={18} />
-            {!collapsed && <span>{loggingOut ? "Cerrando..." : "Cerrar sesión"}</span>}
-          </button>
-          <button className="collapse-button" onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-            {!collapsed && <span>Contraer menú</span>}
+            <span>{loggingOut ? "Cerrando sesión..." : "Cerrar sesión"}</span>
           </button>
         </div>
       </aside>
