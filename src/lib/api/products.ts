@@ -23,6 +23,7 @@ type ParsedProductVariant = {
   stock: number;
   lowStockThreshold: number;
   options: { name: string; value: string }[];
+  images: ProductImageData[];
 };
 
 function errorResponse(message: string, status = 400, code = "BAD_REQUEST") {
@@ -202,6 +203,7 @@ function parseVariants(value: unknown): ParsedProductVariant[] {
       stock: Number(item.stock ?? 0),
       lowStockThreshold: Number(item.lowStockThreshold ?? 3),
       options,
+      images: parseImages(item.images, text(item.label) || "Imagen de variante"),
     };
   });
 }
@@ -263,6 +265,7 @@ export async function createProduct(
         stock: Number(body.stock ?? 0),
         lowStockThreshold: Number(body.lowStockThreshold ?? 3),
         options: [],
+        images: [],
       });
     }
 
@@ -370,6 +373,15 @@ export async function createProduct(
       userId,
       productId.toString(),
     );
+    const promotedVariantImages = await Promise.all(
+      variants.map((variant, index) =>
+        promoteProductImages(
+          variant.images,
+          userId,
+          productId.toString() + "/variants/" + index,
+        ),
+      ),
+    );
 
     const product = await ProductModel.create({
       _id: productId,
@@ -387,10 +399,11 @@ export async function createProduct(
 
     try {
       const createdVariants = await ProductVariantModel.insertMany(
-        variants.map((variant) => ({
+        variants.map((variant, index) => ({
           productId: product._id,
           label: variant.label,
           options: variant.options,
+          images: promotedVariantImages[index].images,
           sku: variant.sku,
           purchasePrice: variant.purchasePrice,
           wholesalePrice: variant.wholesalePrice,
@@ -414,9 +427,13 @@ export async function createProduct(
         await InventoryMovementModel.insertMany(initialMovements);
       }
 
-      if (promotedImages.pendingUrls.length) {
+      const allPendingImageUrls = [
+        ...promotedImages.pendingUrls,
+        ...promotedVariantImages.flatMap((item) => item.pendingUrls),
+      ];
+      if (allPendingImageUrls.length) {
         try {
-          await del(promotedImages.pendingUrls);
+          await del(allPendingImageUrls);
         } catch (cleanupError) {
           console.error("[PRODUCT_PENDING_IMAGE_CLEANUP]", cleanupError);
         }
@@ -435,9 +452,13 @@ export async function createProduct(
       await ProductVariantModel.deleteMany({ productId: product._id });
       await ProductModel.deleteOne({ _id: product._id });
 
-      if (promotedImages.permanentUrls.length) {
+      const allPermanentImageUrls = [
+        ...promotedImages.permanentUrls,
+        ...promotedVariantImages.flatMap((item) => item.permanentUrls),
+      ];
+      if (allPermanentImageUrls.length) {
         try {
-          await del(promotedImages.permanentUrls);
+          await del(allPermanentImageUrls);
         } catch (cleanupError) {
           console.error("[PRODUCT_IMAGE_ROLLBACK_CLEANUP]", cleanupError);
         }
@@ -666,6 +687,24 @@ export async function updateProduct(
       alt: image.alt,
       isPrimary: image.isPrimary,
     }));
+    const preparedVariantImages = new Map<string, Awaited<ReturnType<typeof prepareEditedProductImages>>>();
+    for (const [index, variant] of variants.entries()) {
+      const existing = variant._id ? variantsById.get(variant._id) : undefined;
+      const currentVariantImages = (existing?.images ?? []).map((image: any) => ({
+        url: image.url,
+        alt: image.alt ?? "",
+        isPrimary: image.isPrimary ?? false,
+      }));
+      const key = variant._id || "new-" + index;
+      const prepared = await prepareEditedProductImages(
+        variant.images,
+        currentVariantImages,
+        userId,
+        product._id.toString() + "/variants/" + key,
+      );
+      preparedVariantImages.set(key, prepared);
+      promotedImageUrls.push(...prepared.newPermanentUrls);
+    }
     const preparedImages = await prepareEditedProductImages(
       images,
       currentImages,
@@ -709,6 +748,7 @@ export async function updateProduct(
         const oldStock = existing.stock;
         existing.label = variant.label;
         existing.options = variant.options;
+        existing.images = preparedVariantImages.get(variant._id)!.images;
         existing.sku = variant.sku;
         existing.purchasePrice = variant.purchasePrice;
         existing.wholesalePrice = variant.wholesalePrice;
@@ -732,6 +772,7 @@ export async function updateProduct(
           productId: product._id,
           label: variant.label,
           options: variant.options,
+          images: preparedVariantImages.get("new-" + variants.indexOf(variant))!.images,
           sku: variant.sku,
           purchasePrice: variant.purchasePrice,
           wholesalePrice: variant.wholesalePrice,
@@ -749,6 +790,15 @@ export async function updateProduct(
             performedBy: userId,
           });
         }
+      }
+    }
+
+    const allVariantPendingUrls = Array.from(preparedVariantImages.values()).flatMap((item) => item.pendingUrls);
+    if (allVariantPendingUrls.length) {
+      try {
+        await del(allVariantPendingUrls);
+      } catch (cleanupError) {
+        console.error("[PRODUCT_EDIT_VARIANT_PENDING_IMAGE_CLEANUP]", cleanupError);
       }
     }
 

@@ -55,6 +55,7 @@ type VariantRecord = {
   label: string;
   options?: { name: string; value: string }[];
   stock: number;
+  images?: ProductImageRecord[];
 };
 
 type PublicProductData = {
@@ -72,7 +73,7 @@ type PublicProductData = {
     images: ProductImageRecord[];
     sellingPrice: number;
     available: boolean;
-    variants: { id: string; label: string; stock: number; sellingPrice: number }[];
+    variants: { id: string; label: string; stock: number; sellingPrice: number; options: { name: string; value: string }[]; images: ProductImageRecord[] }[];
   };
 };
 
@@ -138,7 +139,7 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
     : null;
 
   const variants = await ProductVariantModel.find({ productId: product._id, isActive: true })
-    .select("_id label options stock")
+    .select("_id label options stock images")
     .lean() as unknown as VariantRecord[];
 
   const availableVariants = variants.filter((variant) => variant.stock > 0);
@@ -167,6 +168,8 @@ async function getPublicProduct(resellerId: string, productId: string): Promise<
         id: String(variant._id),
         label: variantLabel(variant),
         stock: variant.stock,
+        options: variant.options ?? [],
+        images: (variant.images ?? []).map((image) => ({ ...image, url: safeImageUrl(image.url) })).filter((image) => Boolean(image.url)),
         sellingPrice: catalogItem.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? catalogItem.sellingPrice,
       })),
     },
@@ -249,55 +252,36 @@ export default async function PublicProductPage({ params }: PageProps) {
           <span>{product.title}</span>
         </nav>
 
-        <section className="public-product-layout">
-          <div className="public-product-gallery">
-            {primaryImage ? (
-              <img src={primaryImage.url} alt={primaryImage.alt || product.title} />
-            ) : (
-              <div className="public-catalog-image-placeholder public-product-no-image"><span>T</span></div>
-            )}
-            {product.images.length > 1 ? (
-              <div className="public-product-image-count">{product.images.length} imágenes del producto</div>
-            ) : null}
-          </div>
-
-          <div className="public-product-information">
-            <span className="public-catalog-kicker">{product.category}</span>
-            <h1>{product.title}</h1>
-            <p className="public-product-seller">Publicado por <strong>{sellerName}</strong></p>
-            {data.sellerDescription ? <p className="public-product-seller-description">{data.sellerDescription}</p> : null}
-            <div className="public-product-price">{maxVariantPrice > displayPrice ? "Desde " + money(displayPrice) : money(displayPrice)}</div>
-            <span className={product.available ? "public-product-availability available" : "public-product-availability unavailable"}>
-              {product.available ? "Disponible para pedir" : "Agotado por el momento"}
-            </span>
-
-            {product.description ? <p className="public-product-description">{product.description}</p> : null}
-
-            <PublicCartControls
-              resellerId={data.sellerId}
-              storeSlug={data.sellerSlug}
-              productId={product.id}
-              productTitle={product.title}
-              sellingPrice={product.sellingPrice}
-              variants={product.variants}
-            />
-
-            <div className="public-product-share-panel">
-              <strong>Comparte este producto</strong>
-              <p>Comparte la imagen y el enlace cuando tu dispositivo lo permita, o envía el enlace por WhatsApp.</p>
-              <ShareProductActions
-                title={product.title}
-                description={shareDescription}
-                productUrl={shareUrl}
-                imageUrl={primaryImage?.url}
-              />
-            </div>
-
-            <Link href={"/tienda/" + resellerId} className="public-product-back-link">
-              ← Volver al catálogo de {sellerName}
-            </Link>
-          </div>
+        <section className="public-product-layout public-product-layout-variant">
+          <PublicCartControls
+            resellerId={data.sellerId}
+            storeSlug={data.sellerSlug}
+            productId={product.id}
+            productTitle={product.title}
+            category={product.category}
+            description={product.description}
+            sellerName={sellerName}
+            sellerDescription={data.sellerDescription}
+            sellingPrice={product.sellingPrice}
+            variants={product.variants}
+            productImages={product.images}
+          />
         </section>
+
+        <div className="public-product-share-panel public-product-share-panel-below">
+          <strong>Comparte este producto</strong>
+          <p>Comparte la imagen y el enlace cuando tu dispositivo lo permita, o envía el enlace por WhatsApp.</p>
+          <ShareProductActions
+            title={product.title}
+            description={shareDescription}
+            productUrl={shareUrl}
+            imageUrl={primaryImage?.url}
+          />
+        </div>
+
+        <Link href={"/tienda/" + resellerId} className="public-product-back-link">
+          ← Volver al catálogo de {sellerName}
+        </Link>
 
         <footer className="public-catalog-footer">
           <span>Catálogo creado con <strong>TrendinShop</strong></span>

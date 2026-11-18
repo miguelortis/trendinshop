@@ -10,11 +10,12 @@ import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
+import { ResellerComboModel } from "@/models/ResellerCombo";
 import { SaleModel } from "@/models/Sale";
 import { SalePaymentModel } from "@/models/SalePayment";
 import { ResellerSupplierPaymentModel } from "@/models/ResellerSupplierPayment";
 
-type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown };
+type SaleLineInput = { variantId: string; quantity: number; unitPrice?: unknown; lineTotal?: unknown; comboId?: string; comboTitle?: string; comboGroupId?: string };
 type ProductRecord = {
   _id: mongoose.Types.ObjectId;
   title: string;
@@ -46,11 +47,7 @@ type CustomerRecord = {
 };
 
 type SharedCartSource = {
-  items: {
-    variantId: mongoose.Types.ObjectId | string;
-    quantity: number;
-    unitPrice: number;
-  }[];
+  items: any[];
   isActive: boolean;
   save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
 };
@@ -60,11 +57,7 @@ type PublicOrderSource = {
   resellerId: mongoose.Types.ObjectId;
   resellerRole: "ADMIN" | "RESELLER";
   status: "PENDING" | "IN_PROGRESS" | "CANCELLED" | "CONVERTED";
-  items: {
-    variantId: mongoose.Types.ObjectId;
-    quantity: number;
-    unitPrice: number;
-  }[];
+  items: any[];
   customer: {
     documentId?: string;
     firstName: string;
@@ -77,6 +70,34 @@ type PublicOrderSource = {
   convertedAt: Date | null;
   save(options?: { session?: mongoose.ClientSession }): Promise<unknown>;
 };
+
+function expandComboSnapshot(item: any, groupId: string): Record<string, unknown>[] {
+  const components = Array.isArray(item.components) ? item.components : [];
+  if (components.length < 2 || components.length > 5) fail("El combo no tiene un detalle válido de productos.", 409, "COMBO_SNAPSHOT_INVALID");
+  const quantity = Number(item.quantity);
+  const totalRevenue = toCents(Number(item.unitPrice) * quantity);
+  const weights = components.map((component: any) =>
+    Math.max(1, toCents(Number(component.unitCost ?? 0) * Number(component.quantity) * quantity)),
+  );
+  const totalWeight = weights.reduce((sum: number, value: number) => sum + value, 0);
+  let allocated = 0;
+  return components.map((component: any, index: number) => {
+    const componentQuantity = Number(component.quantity) * quantity;
+    const lineTotalCents = index === components.length - 1
+      ? totalRevenue - allocated
+      : Math.min(totalRevenue - allocated, Math.max(1, Math.round(totalRevenue * weights[index] / totalWeight)));
+    allocated += lineTotalCents;
+    return {
+      variantId: String(component.variantId),
+      quantity: componentQuantity,
+      unitPrice: fromCents(Math.max(1, Math.round(lineTotalCents / componentQuantity))),
+      lineTotal: fromCents(lineTotalCents),
+      comboId: String(item.comboId),
+      comboTitle: String(item.comboTitle || item.productTitle || "Combo"),
+      comboGroupId: groupId,
+    };
+  });
+}
 
 class SaleRequestError extends Error {
   status: number;
@@ -165,21 +186,26 @@ function serializeSale(input: unknown, userRole: string) {
 }
 
 function readSaleLines(value: unknown): SaleLineInput[] | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 30) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 150) return null;
   const result: SaleLineInput[] = [];
   const seen = new Set<string>();
-
   for (const entry of value) {
     if (!entry || typeof entry !== "object") return null;
     const row = entry as Record<string, unknown>;
     const variantId = text(row.variantId);
     const quantity = Number(row.quantity);
-    if (!mongoose.isValidObjectId(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
-      return null;
-    }
-    if (seen.has(variantId)) return null;
-    seen.add(variantId);
-    result.push({ variantId, quantity, unitPrice: row.unitPrice });
+    const comboId = text(row.comboId);
+    const comboGroupId = text(row.comboGroupId);
+    if (!mongoose.isValidObjectId(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 ||
+        (comboId && !mongoose.isValidObjectId(comboId)) || (comboGroupId && comboGroupId.length > 180)) return null;
+    const key = variantId + "|" + (comboGroupId || "PRODUCT");
+    if (seen.has(key)) return null;
+    seen.add(key);
+    result.push({
+      variantId, quantity, unitPrice: row.unitPrice, lineTotal: row.lineTotal,
+      comboId: comboId || undefined, comboTitle: text(row.comboTitle).slice(0, 120) || undefined,
+      comboGroupId: comboGroupId || undefined,
+    });
   }
   return result;
 }
@@ -510,15 +536,14 @@ export async function createSale(request: Request, userId: string, userRole: str
         if (!sharedCart) {
           fail("Este carrito ya se utilizó, caducó o no pertenece a tu tienda.", 404, "SHARED_CART_NOT_AVAILABLE");
         }
-        const sharedLines = readSaleLines(sharedCart.items.map((item) => ({
-          variantId: String(item.variantId),
-          quantity: Number(item.quantity),
-        })));
+        const rawSharedLines = sharedCart.items.flatMap((item: any, index: number) => {
+          if (item.kind === "COMBO") return expandComboSnapshot(item, String(sharedCartToken) + ":" + index);
+          sharedCartPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
+          return [{ variantId: String(item.variantId), quantity: Number(item.quantity) }];
+        });
+        const sharedLines = readSaleLines(rawSharedLines);
         if (!sharedLines) fail("El carrito compartido no contiene productos válidos.", 409, "SHARED_CART_ITEMS_INVALID");
         effectiveLines = sharedLines;
-        for (const item of sharedCart.items) {
-          sharedCartPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
-        }
       }
 
       if (sourcePublicOrderId) {
@@ -534,13 +559,15 @@ export async function createSale(request: Request, userId: string, userRole: str
           fail("El pedido ya fue convertido, cancelado o no pertenece a tu catálogo.", 409, "PUBLIC_ORDER_NOT_CONVERTIBLE");
         }
 
-        const orderLines = sourceOrder.items.map((item) => {
+        const orderLines = sourceOrder.items.flatMap((item: any, index: number) => {
+          if (item.kind === "COMBO") return expandComboSnapshot(item, String(sourceOrder!._id) + ":" + index);
           sourceOrderPriceByVariant.set(String(item.variantId), Number(item.unitPrice));
-          return {
+          return [{
             variantId: String(item.variantId),
             quantity: Number(item.quantity),
             unitPrice: item.unitPrice,
-          };
+            lineTotal: item.lineTotal,
+          }];
         });
         const parsedOrderLines = readSaleLines(orderLines);
         if (!parsedOrderLines) fail("Los productos guardados en el pedido ya no son válidos.", 409, "PUBLIC_ORDER_ITEMS_INVALID");
@@ -613,12 +640,13 @@ export async function createSale(request: Request, userId: string, userRole: str
       }
 
       const variantIds = effectiveLines.map((line) => line.variantId);
+      const uniqueVariantIds = [...new Set(variantIds)];
       const variants = await ProductVariantModel.find({
-        _id: { $in: variantIds },
+        _id: { $in: uniqueVariantIds },
         isActive: true,
       }).session(transactionSession).lean() as unknown as VariantRecord[];
 
-      if (variants.length !== effectiveLines.length) {
+      if (variants.length !== uniqueVariantIds.length) {
         fail("Una de las variantes ya no está disponible.", 409, "VARIANT_UNAVAILABLE");
       }
 
@@ -631,6 +659,18 @@ export async function createSale(request: Request, userId: string, userRole: str
 
       if (products.length !== productIds.length) {
         fail("Uno de los productos ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
+      }
+
+      const comboIds = [...new Set(effectiveLines.flatMap((line) => line.comboId ? [line.comboId] : []))];
+      if (comboIds.length) {
+        const activeCombos = await ResellerComboModel.find({
+          _id: { $in: comboIds },
+          resellerId: userId,
+          isActive: true,
+        }).session(transactionSession).select("_id").lean();
+        if (activeCombos.length !== comboIds.length) {
+          fail("Uno de los combos ya no está activo en tu catálogo.", 409, "COMBO_NOT_AVAILABLE");
+        }
       }
 
       const productById = new Map<string, ProductRecord>();
@@ -649,7 +689,7 @@ export async function createSale(request: Request, userId: string, userRole: str
         const product = productById.get(String(variant.productId));
         if (!product) fail("Uno de los productos ya no está disponible.", 409, "PRODUCT_UNAVAILABLE");
         const catalogItem = catalogByProductId.get(String(product._id));
-        if (userRole === "RESELLER" && !catalogItem) {
+        if (userRole === "RESELLER" && !catalogItem && !line.comboId) {
           fail("Añade primero cada producto a tu catálogo personal.", 403, "PRODUCT_NOT_IN_CATALOG");
         }
 
@@ -659,24 +699,32 @@ export async function createSale(request: Request, userId: string, userRole: str
         const sourceOrderPrice = sourceOrderPriceByVariant.get(line.variantId);
         const sharedCartPrice = sharedCartPriceByVariant.get(line.variantId);
         const currentCatalogPrice = sharedCartPrice !== undefined && catalogItem ? defaultPrice : undefined;
-        const unitPrice = sourceOrderPrice !== undefined
-          ? parsePrice(sourceOrderPrice)
-          : currentCatalogPrice !== undefined
-            ? parsePrice(currentCatalogPrice)
-            : sharedCartPrice !== undefined
-              ? parsePrice(sharedCartPrice)
-              : userRole === "RESELLER" && catalogItem
-                ? parsePrice(defaultPrice)
-                : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
-                    ? parsePrice(defaultPrice)
-                    : parsePrice(line.unitPrice));
+        const unitPrice = line.comboId
+          ? parsePrice(line.unitPrice)
+          : sourceOrderPrice !== undefined
+            ? parsePrice(sourceOrderPrice)
+            : currentCatalogPrice !== undefined
+              ? parsePrice(currentCatalogPrice)
+              : sharedCartPrice !== undefined
+                ? parsePrice(sharedCartPrice)
+                : userRole === "RESELLER" && catalogItem
+                  ? parsePrice(defaultPrice)
+                  : (line.unitPrice === undefined || line.unitPrice === null || line.unitPrice === ""
+                      ? parsePrice(defaultPrice)
+                      : parsePrice(line.unitPrice));
         if (unitPrice === null) fail("El precio de venta debe ser mayor que cero.", 400, "INVALID_PRICE");
 
         const unitCost = userRole === "ADMIN"
           ? (variant.purchasePrice ?? product.purchasePrice)
           : (variant.wholesalePrice ?? product.wholesalePrice);
         const unitCostCents = toCents(Number(unitCost));
-        const lineTotalCents = toCents(unitPrice) * line.quantity;
+        const customLineTotal = line.lineTotal === undefined || line.lineTotal === null || line.lineTotal === ""
+          ? null
+          : Number(line.lineTotal);
+        if (customLineTotal !== null && (!Number.isFinite(customLineTotal) || customLineTotal < 0)) {
+          fail("El importe asignado a un componente del combo no es válido.", 400, "INVALID_COMBO_LINE_TOTAL");
+        }
+        const lineTotalCents = customLineTotal === null ? toCents(unitPrice) * line.quantity : toCents(customLineTotal);
         const lineCostCents = unitCostCents * line.quantity;
 
         return {
@@ -747,6 +795,9 @@ export async function createSale(request: Request, userId: string, userRole: str
           productSku: item.product.sku,
           variantLabel: item.variant.label,
           variantSku: item.variant.sku,
+          comboId: item.sourceLine.comboId ? new mongoose.Types.ObjectId(item.sourceLine.comboId) : null,
+          comboTitle: item.sourceLine.comboTitle ?? "",
+          comboGroupId: item.sourceLine.comboGroupId ?? "",
           options: item.variant.options ?? [],
           quantity: item.quantity,
           unitPrice: item.unitPrice,
