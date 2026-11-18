@@ -7,6 +7,7 @@ import { ProductModel } from "@/models/Product";
 import { ProductVariantModel } from "@/models/ProductVariant";
 import { PublicOrderModel } from "@/models/PublicOrder";
 import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
+import { ResellerComboModel } from "@/models/ResellerCombo";
 import { UserModel } from "@/models/User";
 import { CustomerModel } from "@/models/Customer";
 import { CustomerIdentityModel } from "@/models/CustomerIdentity";
@@ -21,18 +22,8 @@ type CustomerInput = {
   email: string;
   address: string;
 };
-type OrderItemRecord = {
-  productId: mongoose.Types.ObjectId | string;
-  variantId: mongoose.Types.ObjectId | string;
-  productTitle: string;
-  productSku: string;
-  variantLabel: string;
-  variantSku: string;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
-  stockAtRequest: number;
-};
+type OrderItemRecord = Record<string, any>;
+
 type CustomerRecord = CustomerInput;
 type PublicOrderRecord = {
   _id: mongoose.Types.ObjectId;
@@ -65,6 +56,7 @@ type PublicProductForOrder = {
   _id: mongoose.Types.ObjectId;
   title: string;
   sku: string;
+  wholesalePrice?: number;
 };
 type PublicVariantForOrder = {
   _id: mongoose.Types.ObjectId;
@@ -72,8 +64,12 @@ type PublicVariantForOrder = {
   label: string;
   sku: string;
   stock: number;
+  wholesalePrice?: number | null;
 };
-type PublicOrderLineInput = { productId: string; variantId: string; quantity: number };
+type ProductOrderInput = { kind: "PRODUCT"; productId: string; variantId: string; quantity: number };
+type ComboOrderInput = { kind: "COMBO"; comboId: string; quantity: number; components: { productId: string; variantId: string; quantity: number }[] };
+type PublicOrderLineInput = ProductOrderInput | ComboOrderInput;
+
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -104,24 +100,43 @@ function customerName(customer?: CustomerRecord) {
 function normalizeRequestedItems(body: Record<string, unknown>): PublicOrderLineInput[] | null {
   let source: unknown = body.items;
   if (!Array.isArray(source)) {
-    const productId = text(body.productId);
-    const variantId = text(body.variantId);
-    source = [{ productId, variantId, quantity: Number(body.quantity) }];
+    source = [{ kind: "PRODUCT", productId: text(body.productId), variantId: text(body.variantId), quantity: Number(body.quantity) }];
   }
   if (!Array.isArray(source) || source.length < 1 || source.length > 30) return null;
-
   const seen = new Set<string>();
   const output: PublicOrderLineInput[] = [];
   for (const value of source) {
     if (!value || typeof value !== "object") return null;
     const item = value as Record<string, unknown>;
-    const productId = text(item.productId);
-    const variantId = text(item.variantId);
     const quantity = Number(item.quantity);
-    if (!/^[a-f0-9]{24}$/i.test(productId) || !/^[a-f0-9]{24}$/i.test(variantId) ||
-      !Number.isInteger(quantity) || quantity < 1 || quantity > 100 || seen.has(variantId)) return null;
-    seen.add(variantId);
-    output.push({ productId, variantId, quantity });
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) return null;
+    if (item.kind === "COMBO") {
+      const comboId = text(item.comboId);
+      if (!mongoose.isValidObjectId(comboId) || !Array.isArray(item.components) || item.components.length < 2 || item.components.length > 5) return null;
+      const components: ComboOrderInput["components"] = [];
+      const productIds = new Set<string>();
+      for (const raw of item.components) {
+        if (!raw || typeof raw !== "object") return null;
+        const component = raw as Record<string, unknown>;
+        const productId = text(component.productId);
+        const variantId = text(component.variantId);
+        const componentQuantity = Number(component.quantity);
+        if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) ||
+            !Number.isInteger(componentQuantity) || componentQuantity < 1 || componentQuantity > 50 || productIds.has(productId)) return null;
+        productIds.add(productId);
+        components.push({ productId, variantId, quantity: componentQuantity });
+      }
+      const key = comboId + ":" + components.map((component) => component.variantId).join("-");
+      if (seen.has(key)) return null;
+      seen.add(key);
+      output.push({ kind: "COMBO", comboId, quantity, components });
+    } else {
+      const productId = text(item.productId);
+      const variantId = text(item.variantId);
+      if (!mongoose.isValidObjectId(productId) || !mongoose.isValidObjectId(variantId) || seen.has("P:" + variantId)) return null;
+      seen.add("P:" + variantId);
+      output.push({ kind: "PRODUCT", productId, variantId, quantity });
+    }
   }
   return output;
 }
@@ -136,7 +151,31 @@ function serializeOrder(order: PublicOrderRecord, seller?: UserRecord) {
     resellerRole: order.resellerRole,
     customer: order.customer,
     customerName: customerName(order.customer),
-    items: (order.items ?? []).map((item) => ({
+    items: (order.items ?? []).map((item) => item.kind === "COMBO" ? ({
+      kind: "COMBO",
+      comboId: String(item.comboId),
+      comboTitle: item.comboTitle,
+      productTitle: item.productTitle,
+      productSku: "",
+      variantLabel: item.variantLabel,
+      variantSku: "",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+      stockAtRequest: item.stockAtRequest,
+      components: (item.components ?? []).map((component: any) => ({
+        productId: String(component.productId),
+        variantId: String(component.variantId),
+        productTitle: component.productTitle,
+        productSku: component.productSku,
+        variantLabel: component.variantLabel,
+        variantSku: component.variantSku,
+        quantity: component.quantity,
+        unitCost: component.unitCost,
+        stockAtRequest: component.stockAtRequest,
+      })),
+    }) : ({
+      kind: "PRODUCT",
       productId: String(item.productId),
       variantId: String(item.variantId),
       productTitle: item.productTitle,
@@ -204,24 +243,90 @@ export async function createPublicOrder(request: Request, buyerId: string) {
       if (!buyer) throw new PublicOrderError("Tu cuenta ya no está disponible. Inicia sesión nuevamente.", 401, "BUYER_NOT_AVAILABLE");
       if (!seller) throw new PublicOrderError("Este catálogo ya no está disponible.", 404, "CATALOG_NOT_FOUND");
 
-      const productIds = [...new Set(inputItems.map((item) => item.productId))];
-      const variantIds = inputItems.map((item) => item.variantId);
-      const [catalogItems, products, variants] = await Promise.all([
+      const regularInputs = inputItems.filter((item): item is ProductOrderInput => item.kind === "PRODUCT");
+      const comboInputs = inputItems.filter((item): item is ComboOrderInput => item.kind === "COMBO");
+      const productIds = [...new Set([
+        ...regularInputs.map((item) => item.productId),
+        ...comboInputs.flatMap((item) => item.components.map((component) => component.productId)),
+      ])];
+      const variantIds = [
+        ...regularInputs.map((item) => item.variantId),
+        ...comboInputs.flatMap((item) => item.components.map((component) => component.variantId)),
+      ];
+      const comboIds = comboInputs.map((item) => item.comboId);
+      const [catalogItems, products, variants, combos] = await Promise.all([
         ResellerCatalogItemModel.find({
           resellerId: seller._id,
-          productId: { $in: productIds },
+          productId: { $in: regularInputs.map((item) => item.productId) },
           isActive: true,
         }).select("productId sellingPrice variantPrices").session(session!).lean() as unknown as Promise<{ productId: mongoose.Types.ObjectId; sellingPrice: number; variantPrices?: { variantId: mongoose.Types.ObjectId; sellingPrice: number }[] }[]>,
         ProductModel.find({ _id: { $in: productIds }, isActive: true })
-          .select("_id title sku").session(session!).lean() as unknown as Promise<PublicProductForOrder[]>,
+          .select("_id title sku wholesalePrice").session(session!).lean() as unknown as Promise<PublicProductForOrder[]>,
         ProductVariantModel.find({ _id: { $in: variantIds }, isActive: true })
-          .select("_id productId label sku stock").session(session!).lean() as unknown as Promise<PublicVariantForOrder[]>,
+          .select("_id productId label sku stock wholesalePrice").session(session!).lean() as unknown as Promise<PublicVariantForOrder[]>,
+        comboIds.length ? ResellerComboModel.find({ _id: { $in: comboIds }, resellerId: seller._id, isActive: true }).session(session!).lean() as any : Promise.resolve([]),
       ]);
 
       const productById = new Map(products.map((product) => [String(product._id), product]));
       const variantById = new Map(variants.map((variant) => [String(variant._id), variant]));
       const catalogByProductId = new Map(catalogItems.map((item) => [String(item.productId), item]));
+      const comboById = new Map((combos as any[]).map((combo) => [String(combo._id), combo]));
       const normalizedItems = inputItems.map((input) => {
+        if (input.kind === "COMBO") {
+          const combo = comboById.get(input.comboId);
+          if (!combo) throw new PublicOrderError("El combo ya no está publicado en este catálogo.", 409, "COMBO_NOT_AVAILABLE");
+          const definitions = combo.components as { productId: mongoose.Types.ObjectId; quantity: number }[];
+          if (definitions.length !== input.components.length) throw new PublicOrderError("La composición del combo cambió. Vuelve a configurarlo.", 409, "COMBO_CHANGED");
+          const selectedByProduct = new Map(input.components.map((component) => [component.productId, component]));
+          if (definitions.some((definition) => !selectedByProduct.has(String(definition.productId)))) {
+            throw new PublicOrderError("Selecciona una variante para cada producto del combo.", 400, "COMBO_SELECTION_INCOMPLETE");
+          }
+          const componentSnapshots = definitions.map((definition) => {
+            const productId = String(definition.productId);
+            const selected = selectedByProduct.get(productId);
+            const product = productById.get(productId);
+            const variant = selected ? variantById.get(selected.variantId) : undefined;
+            if (!product || !variant || String(variant.productId) !== productId) {
+              throw new PublicOrderError("Una variante del combo ya no está disponible.", 409, "COMBO_VARIANT_UNAVAILABLE");
+            }
+            const quantity = Number(definition.quantity ?? 1);
+            if (variant.stock < quantity * input.quantity) {
+              throw new PublicOrderError("No hay existencias suficientes para " + product.title + ". Disponibles: " + Math.floor(variant.stock / quantity) + " combos.", 409, "INSUFFICIENT_COMBO_STOCK");
+            }
+            return {
+              productId: product._id,
+              variantId: variant._id,
+              productTitle: product.title,
+              productSku: product.sku,
+              variantLabel: variant.label,
+              variantSku: variant.sku,
+              quantity,
+              unitCost: fromCents(toCents(Number(variant.wholesalePrice ?? product.wholesalePrice ?? 0))),
+              stockAtRequest: variant.stock,
+            };
+          });
+          const baseCents = componentSnapshots.reduce((sum, component) => sum + toCents(component.unitCost) * component.quantity, 0);
+          const base = fromCents(baseCents);
+          const unitPrice = fromCents(toCents(combo.profitMode === "PERCENT"
+            ? base * (1 + Number(combo.profitValue) / 100)
+            : base + Number(combo.profitValue)));
+          if (unitPrice <= 0) throw new PublicOrderError("El precio calculado del combo no es válido.", 409, "INVALID_COMBO_PRICE");
+          const stockAtRequest = Math.min(...componentSnapshots.map((component) => Math.floor(component.stockAtRequest / component.quantity)));
+          return {
+            kind: "COMBO",
+            comboId: combo._id,
+            comboTitle: combo.title,
+            components: componentSnapshots,
+            productTitle: combo.title,
+            productSku: "",
+            variantLabel: componentSnapshots.map((component) => component.variantLabel).join(" + "),
+            variantSku: "",
+            quantity: input.quantity,
+            unitPrice,
+            lineTotal: fromCents(toCents(unitPrice) * input.quantity),
+            stockAtRequest,
+          };
+        }
         const product = productById.get(input.productId);
         const variant = variantById.get(input.variantId);
         const catalog = catalogByProductId.get(input.productId);
@@ -241,6 +346,7 @@ export async function createPublicOrder(request: Request, buyerId: string) {
         }
         const unitPrice = fromCents(toCents(effectiveSellingPrice));
         return {
+          kind: "PRODUCT",
           productId: product._id,
           variantId: variant._id,
           productTitle: product.title,
@@ -310,6 +416,32 @@ export async function createPublicOrder(request: Request, buyerId: string) {
           notificationsEmailConsent: false,
           isActive: true,
         }], { session: session! });
+      }
+
+      // Validate aggregate demand across every line. Different combos (or a combo and
+      // an individual product) can consume the same variant in one order.
+      const requiredByVariant = new Map<string, number>();
+      for (const item of normalizedItems) {
+        if ("components" in item) {
+          for (const component of item.components ?? []) {
+            const variantId = String(component.variantId);
+            requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(component.quantity) * Number(item.quantity));
+          }
+        } else {
+          const variantId = String(item.variantId);
+          requiredByVariant.set(variantId, (requiredByVariant.get(variantId) ?? 0) + Number(item.quantity));
+        }
+      }
+      for (const [variantId, required] of requiredByVariant) {
+        const variant = variantById.get(variantId);
+        if (!variant || variant.stock < required) {
+          const product = variant ? productById.get(String(variant.productId)) : null;
+          throw new PublicOrderError(
+            "La cantidad total solicitada supera las existencias de " + (product?.title ?? "una variante") + ". Disponibles: " + (variant?.stock ?? 0) + ".",
+            409,
+            "INSUFFICIENT_AGGREGATE_STOCK",
+          );
+        }
       }
 
       const subtotal = fromCents(normalizedItems.reduce((sum, item) => sum + toCents(item.lineTotal), 0));
@@ -449,11 +581,34 @@ async function convertPublicOrderToSale(orderId: string, userId: string, userRol
 
     const payload = {
       sourcePublicOrderId: String(order._id),
-      items: order.items.map((item) => ({
-        variantId: String(item.variantId),
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-      })),
+      items: order.items.flatMap((item: any) => {
+        if (item.kind !== "COMBO") return [{
+          variantId: String(item.variantId),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        }];
+        const components = item.components ?? [];
+        const totalRevenueCents = toCents(Number(item.unitPrice) * Number(item.quantity));
+        const totalWeight = components.reduce((sum: number, component: any) =>
+          sum + Math.max(1, toCents(Number(component.unitCost) * Number(component.quantity) * Number(item.quantity))), 0);
+        let allocated = 0;
+        return components.map((component: any, index: number) => {
+          const quantity = Number(component.quantity) * Number(item.quantity);
+          const lineTotalCents = index === components.length - 1
+            ? totalRevenueCents - allocated
+            : Math.max(1, Math.round(totalRevenueCents * Math.max(1, toCents(Number(component.unitCost) * quantity)) / totalWeight));
+          allocated += lineTotalCents;
+          return {
+            variantId: String(component.variantId),
+            quantity,
+            unitPrice: fromCents(Math.max(1, Math.round(lineTotalCents / quantity))),
+            lineTotal: fromCents(lineTotalCents),
+            comboId: String(item.comboId),
+            comboTitle: item.comboTitle || item.productTitle,
+            comboGroupId: String(item.comboId) + ":" + String(order._id) + ":" + (item.components ?? []).map((entry: any) => String(entry.variantId)).join("-"),
+          };
+        });
+      }),
       initialPayment: 0,
       paymentMethod: "CASH",
       note: "Pedido público " + order.orderNumber + (order.note ? " · " + order.note : ""),

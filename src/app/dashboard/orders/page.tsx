@@ -19,8 +19,12 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type OrderStatus = "PENDING" | "IN_PROGRESS" | "CANCELLED" | "CONVERTED";
 type PublicOrderItem = {
-  productId: string;
-  variantId: string;
+  kind?: "PRODUCT" | "COMBO";
+  comboId?: string;
+  comboTitle?: string;
+  components?: { productId: string; variantId: string; productTitle: string; productSku: string; variantLabel: string; variantSku: string; quantity: number; unitCost: number; stockAtRequest: number }[];
+  productId?: string;
+  variantId?: string;
   productTitle: string;
   productSku: string;
   variantLabel: string;
@@ -152,7 +156,7 @@ export default function OrdersPage() {
         order.customer.phone,
         order.customer.email,
         order.resellerName,
-        ...order.items.map((item) => item.productTitle + " " + item.variantLabel + " " + item.productSku),
+        ...order.items.map((item) => [item.productTitle, item.variantLabel, item.productSku, ...(item.components ?? []).map((component) => component.productTitle + " " + component.variantLabel)].join(" ")),
       ].join(" ").toLowerCase().includes(term);
     });
   }, [orders, search, statusFilter]);
@@ -239,9 +243,14 @@ export default function OrdersPage() {
                     <div className="public-order-items">
                       <span className="orders-section-label">Productos solicitados</span>
                       {order.items.map((item, index) => (
-                        <div className="public-order-item" key={item.variantId + "-" + index}>
-                          <div><strong>{item.productTitle}</strong><span>{item.variantLabel} · SKU {item.variantSku} · Cantidad: {item.quantity}</span></div>
-                          <div><strong>{money(item.lineTotal)}</strong><span>{money(item.unitPrice)} / unidad</span></div>
+                        <div className="public-order-item" key={(item.kind === "COMBO" ? item.comboId : item.variantId) + "-" + index}>
+                          <div>
+                            <strong>{item.kind === "COMBO" ? "COMBO · " + (item.comboTitle || item.productTitle) : item.productTitle}</strong>
+                            {item.kind === "COMBO" ? (
+                              <span>{(item.components ?? []).map((component) => component.quantity + " × " + component.productTitle + " (" + component.variantLabel + ")").join(" · ")} · Cantidad de combos: {item.quantity}</span>
+                            ) : <span>{item.variantLabel} · SKU {item.variantSku} · Cantidad: {item.quantity}</span>}
+                          </div>
+                          <div><strong>{money(item.lineTotal)}</strong><span>{money(item.unitPrice)} / {item.kind === "COMBO" ? "combo" : "unidad"}</span></div>
                         </div>
                       ))}
                     </div>

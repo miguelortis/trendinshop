@@ -104,11 +104,26 @@ function normalizeDocumentId(value: string) {
 }
 
 function draft(items: PublicCartViewItem[]): PublicCartDraftItem[] {
-  return items.map(({ productId, variantId, quantity }) => ({ productId, variantId, quantity }));
+  return items.map((item) => item.kind === "COMBO"
+    ? {
+        kind: "COMBO",
+        productId: item.comboId ?? item.productId,
+        variantId: item.variantId,
+        comboId: item.comboId,
+        quantity: item.quantity,
+        components: (item.components ?? []).map((component) => ({
+          productId: component.productId,
+          variantId: component.variantId,
+          quantity: component.quantity,
+        })),
+      }
+    : { kind: "PRODUCT", productId: item.productId, variantId: item.variantId, quantity: item.quantity });
 }
 
 function totalQuantity(items: PublicCartViewItem[]) {
-  return items.reduce((sum, item) => sum + item.quantity, 0);
+  return items.reduce((sum, item) => sum + item.quantity * (item.kind === "COMBO"
+    ? (item.components ?? []).reduce((componentSum, component) => componentSum + component.quantity, 0)
+    : 1), 0);
 }
 
 export function PublicCartExperience({
@@ -512,13 +527,19 @@ export function PublicCartExperience({
                   <article className={"public-cart-item" + (!item.available ? " unavailable" : "")} key={item.variantId}>
                     <div className="public-cart-item-image"><ShoppingBag size={20} /></div>
                     <div className="public-cart-item-copy">
-                      <strong>{item.productTitle}</strong>
-                      <span>{item.variantLabel}</span>
+                      <strong>{item.kind === "COMBO" ? "COMBO · " + item.productTitle : item.productTitle}</strong>
+                      {item.kind === "COMBO" ? (
+                        <div className="public-cart-combo-components">
+                          {(item.components ?? []).map((component) => (
+                            <span key={component.productId}>{component.quantity} × {component.productTitle} · {component.variantLabel}</span>
+                          ))}
+                        </div>
+                      ) : <span>{item.variantLabel}</span>}
                       {item.productSku ? <small>SKU: {item.productSku}</small> : null}
                       {!item.available ? <em>{item.stock <= 0 ? "No disponible actualmente" : "Solo quedan " + item.stock + " unidades"}</em> : null}
                       <div className="public-cart-item-mobile-total">{money(item.lineTotal)}</div>
                     </div>
-                    <div className="public-cart-item-unit">{money(item.unitPrice)} <small>/ unidad</small></div>
+                    <div className="public-cart-item-unit">{money(item.unitPrice)} <small>/ {item.kind === "COMBO" ? "combo" : "unidad"}</small></div>
                     <div className="public-cart-quantity-picker">
                       <button type="button" aria-label={"Reducir cantidad de " + item.productTitle} onClick={() => changeQuantity(item.variantId, item.quantity - 1)}><Minus size={13} /></button>
                       <span>{item.quantity}</span>

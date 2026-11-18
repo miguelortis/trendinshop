@@ -83,9 +83,25 @@ export async function prepareBlobUpload(request: Request) {
       request,
       body,
       onBeforeGenerateToken: async (pathname) => {
-        const safePathname = pathname.replace(/[^a-zA-Z0-9._/-]/g, "_");
+        // Client uploads must include the authenticated user's pending folder
+        // in upload(pathname, ...). The Blob SDK signs the supplied pathname;
+        // it does not rewrite it from this callback.
+        const expectedPrefix = PENDING_IMAGE_PREFIX + user.id + "/";
+        const filename = pathname.startsWith(expectedPrefix)
+          ? pathname.slice(expectedPrefix.length)
+          : "";
+
+        if (
+          !filename ||
+          filename.includes("/") ||
+          filename.includes("\\") ||
+          filename === "." ||
+          filename === ".."
+        ) {
+          throw new Error("INVALID_PENDING_PRODUCT_IMAGE_PATH");
+        }
+
         return {
-          pathname: PENDING_IMAGE_PREFIX + user.id + "/" + safePathname,
           allowedContentTypes: ALLOWED_IMAGE_TYPES,
           maximumSizeInBytes: MAX_IMAGE_SIZE,
           addRandomSuffix: true,

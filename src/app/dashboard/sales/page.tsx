@@ -11,6 +11,9 @@ import { api } from "@/lib/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type SaleItem = {
+  comboId?: string | null;
+  comboTitle?: string;
+  comboGroupId?: string;
   productTitle: string;
   variantLabel: string;
   quantity: number;
@@ -250,7 +253,7 @@ export default function SalesPage() {
                           const profitTotal = item.lineProfit ?? item.lineTotal - costTotal;
                           return (
                             <div className="sale-row-item-detail" key={sale._id + "-" + item.productTitle + "-" + item.variantLabel + "-" + index}>
-                              <span><strong>{item.quantity} × {item.productTitle}</strong> · {item.variantLabel}</span>
+                              <span>{item.comboTitle ? <><strong>{item.comboTitle}</strong> · {item.quantity} × {item.productTitle}</> : <><strong>{item.quantity} × {item.productTitle}</strong> · {item.variantLabel}</>}</span>
                               <small>Venta: {money(item.unitPrice)} / unidad · Costo: {money(costPerUnit)} / unidad</small>
                               <small>Importe: {money(item.lineTotal)} · {isAdmin ? "Ganancia bruta" : "Tu ganancia"}: {money(profitTotal)} ({money(profitPerUnit)} / unidad)</small>
                             </div>
