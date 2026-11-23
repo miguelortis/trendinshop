@@ -10,6 +10,7 @@ type Product = {
   id: string; title: string; description: string; category: string; images: ImageRecord[];
   sellingPrice: number; available: boolean;
   variants: { id: string; label: string; stock: number; sellingPrice: number; options?: VariantOption[] }[];
+  filterVariants: { options: VariantOption[] }[];
 };
 type Combo = {
   id: string; title: string; description: string; available: boolean; availablePacks: number;
@@ -41,7 +42,7 @@ function comboSearchText(combo: Combo) {
     [component.title, ...component.variants.flatMap((variant) => [variant.label, ...variant.options.flatMap((option) => [option.name, option.value])])])].join(" ");
 }
 function getProductOptions(product: Product) {
-  return product.variants.flatMap((variant) => variant.options ?? []);
+  return product.filterVariants.flatMap((variant) => variant.options);
 }
 function getComboOptions(combo: Combo) {
   return combo.components.flatMap((component) => component.variants.flatMap((variant) => variant.options ?? []));
@@ -148,9 +149,11 @@ export function PublicCatalogFilters({ resellerId, products, combos, initialFilt
       if (max !== null && Number.isFinite(max) && priceMin > max) return false;
       const selected = filters.option ?? {};
       if (kind === "product") {
-        const variants = (item as Product).variants;
-        return Object.entries(selected).every(([name, values]) => !values.length || variants.some((variant) =>
-          (variant.options ?? []).some((option) => option.name === name && values.includes(option.value))));
+        const variants = (item as Product).filterVariants;
+        const selectedEntries = Object.entries(selected).filter(([, values]) => values.length);
+        if (!selectedEntries.length) return true;
+        return variants.some((variant) => selectedEntries.every(([name, values]) =>
+          variant.options.some((option) => option.name === name && values.includes(option.value))));
       }
       const allOptions = getComboOptions(item as Combo);
       return Object.entries(selected).every(([name, values]) => !values.length || values.some((value) =>
@@ -243,7 +246,7 @@ export function PublicCatalogFilters({ resellerId, products, combos, initialFilt
       </aside>
       <div className="public-catalog-results">
         <div className="public-catalog-results-head"><strong>{filtered.length} {filtered.length === 1 ? "resultado" : "resultados"}</strong><label>Ordenar <select value={filters.sort ?? "recent"} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}><option value="recent">Más recientes</option><option value="name">Nombre</option><option value="price-asc">Menor precio</option><option value="price-desc">Mayor precio</option></select></label></div>
-        {activeCount || filters.q ? <div className="public-catalog-active-filters">{filters.q ? <button type="button" onClick={() => setFilters((current) => ({ ...current, q: "" }))}>“{filters.q}” <X size={12}/></button> : null}{(filters.category ?? []).map((name) => <button type="button" key={name} onClick={() => setFilters((current) => ({ ...current, category: current.category!.filter((item) => item !== name) }))}>{name} <X size={12}/></button>)}{Object.entries(filters.option ?? {}).flatMap(([name, values]) => values.map((value) => <button type="button" key={name + value} onClick={() => updateOption(name, value)}>{name}: {value} <X size={12}/></button>))}{filters.stock ? <button type="button" onClick={() => setFilters((current) => ({ ...current, stock: "" }))}>{filters.stock === "available" ? "Disponibles" : "Agotados"} <X size={12}/></button> : null}</div> : null}
+        {activeCount || filters.q ? <div className="public-catalog-active-filters">{filters.q ? <button type="button" onClick={() => setFilters((current) => ({ ...current, q: "" }))}>“{filters.q}” <X size={12}/></button> : null}{(filters.category ?? []).map((name) => <button type="button" key={name} onClick={() => setFilters((current) => ({ ...current, category: current.category!.filter((item) => item !== name) }))}>{name} <X size={12}/></button>)}{Object.entries(filters.option ?? {}).flatMap(([name, values]) => values.map((value) => <button type="button" key={name + value} onClick={() => updateOption(name, value)}>{name}: {value} <X size={12}/></button>))}{filters.stock ? <button type="button" onClick={() => setFilters((current) => ({ ...current, stock: "" }))}>{filters.stock === "available" ? "Disponibles" : "Agotados"} <X size={12}/></button> : null}{filters.min ? <button type="button" onClick={() => setFilters((current) => ({ ...current, min: "" }))}>Desde {filters.min} <X size={12}/></button> : null}{filters.max ? <button type="button" onClick={() => setFilters((current) => ({ ...current, max: "" }))}>Hasta {filters.max} <X size={12}/></button> : null}</div> : null}
         {filtered.length ? <div className="public-catalog-grid">{filtered.map(({ kind, item }) => kind === "product" ? renderProduct(item as Product) : renderCombo(item as Combo))}</div> :
           <div className="public-catalog-empty"><div className="public-catalog-empty-mark">T</div><h2>No encontramos productos</h2><p>Prueba con otra búsqueda o elimina alguno de los filtros.</p><button type="button" onClick={clear}>Limpiar búsqueda y filtros</button></div>}
         {shareNotice ? <p className="public-catalog-share-notice" role="status">{shareNotice}</p> : null}
