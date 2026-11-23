@@ -49,6 +49,24 @@ function getProductOptions(product: Product) {
 function getComboOptions(combo: Combo) {
   return combo.components.flatMap((component) => component.variants.flatMap((variant) => variant.options ?? []));
 }
+function getFacetOptions(kind: "product" | "combo", item: Product | Combo, selected: Record<string, string[]>, facetName: string) {
+  const entries = Object.entries(selected).filter(([name, values]) => name !== facetName && values.length);
+  if (kind === "product") {
+    const variants = (item as Product).filterVariants.filter((variant) => entries.every(([name, values]) =>
+      variant.options.some((option) => option.name === name && values.includes(option.value))));
+    return variants.flatMap((variant) => variant.options.filter((option) => option.name === facetName));
+  }
+  const combo = item as Combo;
+  const allNames = new Set(getComboOptions(combo).map((option) => option.name));
+  if (entries.some(([name]) => !allNames.has(name))) return [];
+  return combo.components.flatMap((component) => {
+    const names = new Set(component.variants.flatMap((variant) => variant.options.map((option) => option.name)));
+    const relevant = entries.filter(([name]) => names.has(name));
+    const variants = component.variants.filter((variant) => relevant.every(([name, values]) =>
+      variant.options.some((option) => option.name === name && values.includes(option.value))));
+    return variants.flatMap((variant) => variant.options.filter((option) => option.name === facetName));
+  });
+}
 function readFiltersFromUrl(): Filters {
   const params = new URLSearchParams(window.location.search);
   const option: Record<string, string[]> = {};
@@ -116,23 +134,22 @@ export function PublicCatalogFilters({ resellerId, products, combos, initialFilt
 
   const optionFacets = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
+    const selected = filters.option ?? {};
     facetItems.forEach(({ kind, item }) => {
-      const options = kind === "product" ? getProductOptions(item as Product) : getComboOptions(item as Combo);
-      const seen = new Set<string>();
-      options.forEach(({ name, value }) => {
-        const cleanName = name.trim(); const cleanValue = value.trim();
-        if (!cleanName || !cleanValue) return;
-        const key = cleanName + "::" + cleanValue;
-        if (seen.has(key)) return;
-        seen.add(key);
-        const values = map.get(cleanName) ?? new Map<string, number>();
-        values.set(cleanValue, (values.get(cleanValue) ?? 0) + 1);
-        map.set(cleanName, values);
+      const allOptions = kind === "product" ? getProductOptions(item as Product) : getComboOptions(item as Combo);
+      const names = new Set(allOptions.map((option) => option.name.trim()).filter(Boolean));
+      names.forEach((name) => {
+        const matchingOptions = getFacetOptions(kind, item as Product | Combo, selected, name);
+        const values = new Set(matchingOptions.map((option) => option.value.trim()).filter(Boolean));
+        if (!values.size) return;
+        const counts = map.get(name) ?? new Map<string, number>();
+        values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
+        map.set(name, counts);
       });
     });
     return [...map].map(([name, values]) => ({ name, values: [...values].sort(([a], [b]) => a.localeCompare(b, "es")) }))
       .sort((a, b) => a.name.localeCompare(b.name, "es"));
-  }, [facetItems]);
+  }, [facetItems, filters.option]);
 
   const filtered = useMemo(() => {
     const min = filters.min === "" ? null : Number(filters.min);
