@@ -10,11 +10,13 @@ import { ResellerCatalogItemModel } from "@/models/ResellerCatalogItem";
 import { ResellerComboModel } from "@/models/ResellerCombo";
 import { UserModel } from "@/models/User";
 import { PublicStorefrontHeader } from "@/components/catalog/PublicStorefrontHeader";
+import { PublicCatalogFilters } from "@/components/catalog/PublicCatalogFilters";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ resellerId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 type ResellerRecord = {
@@ -69,7 +71,7 @@ type PublicCatalogProduct = {
   images: ProductImageRecord[];
   sellingPrice: number;
   available: boolean;
-  variants: { id: string; label: string; stock: number; sellingPrice: number }[];
+  variants: { id: string; label: string; stock: number; sellingPrice: number; options: { name: string; value: string }[] }[];
 };
 
 type PublicCatalogCombo = {
@@ -183,6 +185,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       variants: availableVariants.map((variant) => ({
         id: String(variant._id), label: variantLabel(variant), stock: variant.stock,
         sellingPrice: item.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? item.sellingPrice,
+        options: variant.options ?? [],
       })),
     }];
   });
@@ -269,8 +272,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function PublicCatalogPage({ params }: PageProps) {
+export default async function PublicCatalogPage({ params, searchParams }: PageProps) {
   const { resellerId } = await params;
+  const query = await searchParams;
+  const optionFilters = Object.fromEntries(Object.entries(query).filter(([key]) => key.startsWith("f_")).map(([key, value]) => [key.slice(2), Array.isArray(value) ? value : value ? [value] : []]));
+  const initialFilters = {
+    q: typeof query.q === "string" ? query.q : "",
+    category: Array.isArray(query.categoria) ? query.categoria : typeof query.categoria === "string" ? [query.categoria] : [],
+    option: optionFilters,
+    stock: typeof query.stock === "string" ? query.stock : "",
+    min: typeof query.min === "string" ? query.min : "",
+    max: typeof query.max === "string" ? query.max : "",
+    sort: typeof query.orden === "string" ? query.orden : "recent",
+  };
   const catalog = await getPublicCatalog(resellerId);
   if (!catalog) notFound();
   const whatsappDigits = catalog.reseller.contactWhatsApp.replace(/\D/g, "");
@@ -306,72 +320,7 @@ export default async function PublicCatalogPage({ params }: PageProps) {
         </section>
 
         {catalog.products.length || catalog.combos.length ? (
-          <>
-          {catalog.products.length ? (
-          <section className="public-catalog-grid" aria-label="Productos del catálogo">
-            {catalog.products.map((product) => {
-              const image = product.images.find((item) => item.isPrimary) ?? product.images[0];
-              return (
-                <article className="public-catalog-card" key={product.id}>
-                  <Link href={"/tienda/" + resellerId + "/producto/" + product.id} className="public-catalog-image" aria-label={"Ver " + product.title}>
-                    {image ? (
-                      <img src={image.url} alt={image.alt || product.title} loading="lazy" decoding="async" />
-                    ) : (
-                      <div className="public-catalog-image-placeholder" aria-label="Producto sin imagen">
-                        <span>T</span>
-                      </div>
-                    )}
-                    <span className={product.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>
-                      {product.available ? "Disponible" : "Agotado"}
-                    </span>
-                  </Link>
-                  <div className="public-catalog-card-body">
-                    <span className="public-catalog-category">{product.category}</span>
-                    <h2><Link href={"/tienda/" + resellerId + "/producto/" + product.id}>{product.title}</Link></h2>
-                    {product.description ? <p className="public-catalog-description">{product.description}</p> : null}
-                    {product.variants.length ? (
-                      <div className="public-catalog-variants" aria-label="Variantes disponibles">
-                        {product.variants.map((variant) => (
-                          <span key={variant.id}>{variant.label}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="public-catalog-price-row">
-                      <span>Precio de venta</span>
-                      <strong>{(() => { const prices = product.variants.map((variant) => variant.sellingPrice); const min = prices.length ? Math.min(...prices) : product.sellingPrice; const max = prices.length ? Math.max(...prices) : product.sellingPrice; return max > min ? "Desde " + money(min) : money(min); })()}</strong>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </section>
-          ) : null}
-          {catalog.combos.length ? (
-            <section className="public-combo-grid" aria-label="Combos disponibles">
-              {catalog.combos.map((combo) => {
-                const image = combo.images[0];
-                return (
-                  <article className="public-catalog-card public-combo-catalog-card" key={combo.id}>
-                    <Link href={"/tienda/" + resellerId + "/combo/" + combo.id} className="public-catalog-image">
-                      <div className="public-combo-card-images">
-                        {combo.images.slice(0, 4).map((entry, index) => <img key={entry.url + index} src={entry.url} alt={entry.alt || combo.title} loading="lazy" decoding="async"/>)}
-                      </div>
-                      <span className="public-combo-card-badge">COMBO · {combo.components.length} productos</span>
-                      <span className={combo.available ? "public-catalog-stock available" : "public-catalog-stock unavailable"}>{combo.available ? combo.availablePacks + (combo.availablePacks === 1 ? " pack disponible" : " packs disponibles") : "Agotado"}</span>
-                    </Link>
-                    <div className="public-catalog-card-body">
-                      <span className="public-catalog-category">Combo</span>
-                      <h2><Link href={"/tienda/" + resellerId + "/combo/" + combo.id}>{combo.title}</Link></h2>
-                      {combo.description ? <p className="public-catalog-description">{combo.description}</p> : null}
-                      <div className="public-combo-includes">{combo.components.map((component) => <span key={component.productId}>{component.quantity} × {component.title}</span>)}</div>
-                      <div className="public-catalog-price-row"><span>Precio del combo</span><strong>{combo.minPrice === combo.maxPrice ? money(combo.minPrice) : "Desde " + money(combo.minPrice)}</strong></div>
-                    </div>
-                  </article>
-                );
-              })}
-            </section>
-          ) : null}
-          </>
+          <PublicCatalogFilters resellerId={resellerId} products={catalog.products} combos={catalog.combos} initialFilters={initialFilters} />
         ) : (
           <section className="public-catalog-empty">
             <div className="public-catalog-empty-mark">T</div>
