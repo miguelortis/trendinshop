@@ -72,6 +72,7 @@ type PublicCatalogProduct = {
   sellingPrice: number;
   available: boolean;
   variants: { id: string; label: string; stock: number; sellingPrice: number; options: { name: string; value: string }[] }[];
+  filterVariants: { options: { name: string; value: string }[] }[];
 };
 
 type PublicCatalogCombo = {
@@ -182,6 +183,7 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       id, title: product.title, description: product.description ?? "", category,
       images: safeImages(product.images), sellingPrice: item.sellingPrice,
       available: availableVariants.length > 0,
+      filterVariants: productVariants.map((variant) => ({ options: variant.options ?? [] })),
       variants: availableVariants.map((variant) => ({
         id: String(variant._id), label: variantLabel(variant), stock: variant.stock,
         sellingPrice: item.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? item.sellingPrice,
