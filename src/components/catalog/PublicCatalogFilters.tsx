@@ -34,8 +34,10 @@ function money(value: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
 }
 function productSearchText(product: Product) {
-  return [product.title, product.description, product.category, ...product.variants.flatMap((variant) =>
-    [variant.label, ...(variant.options ?? []).flatMap((option) => [option.name, option.value])])].join(" ");
+  return [product.title, product.description, product.category,
+    ...product.variants.flatMap((variant) => [variant.label, ...(variant.options ?? []).flatMap((option) => [option.name, option.value])]),
+    ...product.filterVariants.flatMap((variant) => variant.options.flatMap((option) => [option.name, option.value])),
+  ].join(" ");
 }
 function comboSearchText(combo: Combo) {
   return [combo.title, combo.description, "combo", ...combo.components.flatMap((component) =>
