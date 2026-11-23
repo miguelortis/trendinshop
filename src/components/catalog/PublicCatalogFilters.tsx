@@ -25,7 +25,7 @@ function normalize(value: string) {
     .replace(/[^a-z0-9]/g, "");
 }
 function matches(value: string, query: string) {
-  const terms = query.trim().split(/\\s+/).map(normalize).filter(Boolean);
+  const terms = query.trim().split(/\s+/).map(normalize).filter(Boolean);
   const haystack = normalize(value);
   return !terms.length || terms.every((term) => haystack.includes(term));
 }
