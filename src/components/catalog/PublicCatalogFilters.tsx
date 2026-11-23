@@ -25,8 +25,9 @@ function normalize(value: string) {
     .replace(/[^a-z0-9]/g, "");
 }
 function matches(value: string, query: string) {
-  const needle = normalize(query);
-  return !needle || normalize(value).includes(needle);
+  const terms = query.trim().split(/\\s+/).map(normalize).filter(Boolean);
+  const haystack = normalize(value);
+  return !terms.length || terms.every((term) => haystack.includes(term));
 }
 function money(value: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -146,7 +147,12 @@ export function PublicCatalogFilters({ resellerId, products, combos, initialFilt
       if (min !== null && Number.isFinite(min) && priceMax < min) return false;
       if (max !== null && Number.isFinite(max) && priceMin > max) return false;
       const selected = filters.option ?? {};
-      const allOptions = kind === "product" ? getProductOptions(item as Product) : getComboOptions(item as Combo);
+      if (kind === "product") {
+        const variants = (item as Product).variants;
+        return Object.entries(selected).every(([name, values]) => !values.length || variants.some((variant) =>
+          (variant.options ?? []).some((option) => option.name === name && values.includes(option.value))));
+      }
+      const allOptions = getComboOptions(item as Combo);
       return Object.entries(selected).every(([name, values]) => !values.length || values.some((value) =>
         allOptions.some((option) => option.name === name && option.value === value)));
     });
