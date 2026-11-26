@@ -92,7 +92,7 @@ export default function ResellerCatalogPage() {
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (catalog.data?.products ?? [])
-      .filter((product) => activeTab === "explore" || itemByProductId.has(product._id))
+      .filter((product) => activeTab === "mine" ? itemByProductId.has(product._id) : !itemByProductId.has(product._id))
       .filter((product) => {
         if (!term) return true;
         const category = typeof product.categoryId === "object" ? product.categoryId?.name ?? "" : "";
