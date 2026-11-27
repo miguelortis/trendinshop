@@ -3840,6 +3840,7 @@ button, input, select, textarea { font: inherit; }
 
 /* Per-product add menu: choose an individual listing or create a pack from this product. */
 .reseller-card-add-menu { position:relative; display:flex; flex-direction:column; width:100%; gap:8px; }
+.reseller-catalog-stock-notice { margin:0; padding:9px 11px; border:1px solid #fedf89; border-radius:10px; color:#93370d; background:#fffaeb; font-size:11px; font-weight:650; line-height:1.5; }
 .reseller-card-add-menu > button { width:100%; justify-content:center; }
 .reseller-card-add-menu-panel {
   position:static; display:grid; width:100%; min-width:0; padding:6px;
