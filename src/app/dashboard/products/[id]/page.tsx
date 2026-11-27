@@ -30,6 +30,7 @@ type ProductVariant = {
   wholesalePrice: number | null;
   stock: number;
   lowStockThreshold: number;
+  images: ProductImage[];
   options: { name: string; value: string }[];
 };
 
@@ -240,7 +241,7 @@ export default function ProductDetailsPage() {
               return (
                 <article className="product-variant-card" key={variant._id}>
                   <div className="product-variant-card-main">
-                    <div className="product-variant-icon"><Package size={17} /></div>
+                    <div className="product-variant-icon">{variant.images?.length ? <img src={(variant.images.find((image) => image.isPrimary) ?? variant.images[0]).url} alt={variant.label || "Imagen de variante"} /> : <Package size={17} />}</div>
                     <div className="product-variant-copy">
                       <strong>{variant.label || "Variante"}</strong>
                       <span>SKU {variant.sku}</span>
