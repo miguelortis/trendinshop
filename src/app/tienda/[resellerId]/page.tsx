@@ -179,11 +179,12 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
     const productVariants = variantsByProductId.get(id) ?? [];
     const availableVariants = productVariants.filter((variant) => variant.stock > 0);
     const category = categoryById.get(product.categoryId ? String(product.categoryId) : "") || "General";
+    if (availableVariants.length === 0) return [];
     return [{
       id, title: product.title, description: product.description ?? "", category,
       images: safeImages(product.images), sellingPrice: item.sellingPrice,
-      available: availableVariants.length > 0,
-      filterVariants: productVariants.map((variant) => ({ options: variant.options ?? [] })),
+      available: true,
+      filterVariants: availableVariants.map((variant) => ({ options: variant.options ?? [] })),
       variants: availableVariants.map((variant) => ({
         id: String(variant._id), label: variantLabel(variant), stock: variant.stock,
         sellingPrice: item.variantPrices?.find((price) => String(price.variantId) === String(variant._id))?.sellingPrice ?? item.sellingPrice,
@@ -227,9 +228,10 @@ async function getPublicCatalog(resellerId: string): Promise<PublicCatalogData |
       ? base * (1 + Number(combo.profitValue) / 100)
       : base + Number(combo.profitValue)).toFixed(2));
     const images = components.flatMap((component: any) => component.images.slice(0, 1));
+    if (!available) return [];
     return [{
       id: String(combo._id), title: combo.title, description: combo.description ?? "",
-      available, availablePacks, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
+      available: true, availablePacks, images, minPrice: applyProfit(minBase), maxPrice: applyProfit(maxBase), components,
     }];
   });
 
