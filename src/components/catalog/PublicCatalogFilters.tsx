@@ -255,7 +255,7 @@ export function PublicCatalogFilters({ resellerId, products, combos, initialFilt
     </div>
     <div className={"public-catalog-filter-layout" + (mobileOpen ? " is-open" : "")}>
       <aside className="public-catalog-filter-panel">
-        <div className="public-catalog-filter-heading"><strong><Filter size={16}/> Filtrar productos</strong><button type="button" onClick={clear}>Limpiar</button></div>
+        <div className="public-catalog-filter-heading"><strong><Filter size={16}/> Filtrar productos</strong><div className="public-catalog-filter-heading-actions"><button type="button" onClick={clear}>Limpiar</button><button type="button" className="public-catalog-filter-close" onClick={() => setMobileOpen(false)} aria-label="Ocultar filtros"><X size={15}/><span>Ocultar</span></button></div></div>
         <div className="public-catalog-filter-group"><h3>Categoría</h3>{categoryOptions.map(([name, count]) =>
           <label className="public-catalog-filter-choice" key={name}><input type="checkbox" checked={(filters.category ?? []).includes(name)} onChange={() => setFilters((current) => ({ ...current, category: (current.category ?? []).includes(name) ? current.category!.filter((item) => item !== name) : [...(current.category ?? []), name] }))}/><span>{name}</span><small>{count}</small></label>)}</div>
         {optionFacets.map(({ name, values }) => <div className="public-catalog-filter-group" key={name}><h3>{name}</h3><div className="public-catalog-filter-chips">{values.map(([value, count]) =>
