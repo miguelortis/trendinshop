@@ -59,6 +59,16 @@ export function PublicCartControls({
   const [justAdded, setJustAdded] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
 
+  const mainProductImage = productImages.find((image) => image.isPrimary) ?? productImages[0];
+  function optionThumbnail(name: string, value: string) {
+    if (!/(color|colour|tono)/i.test(name)) return null;
+    const variant = variants.find((item) => (item.options ?? []).some((option) =>
+      option.name.trim() === name && option.value.trim() === value,
+    ));
+    const images = variant?.images ?? [];
+    return images.find((image) => image.isPrimary) ?? images[0] ?? mainProductImage ?? null;
+  }
+
   const selectedVariant = availableVariants.find((variant) => {
     const options = variant.options ?? [];
     return optionNames.length > 0
@@ -203,7 +213,15 @@ export function PublicCartControls({
                         disabled={!available}
                         onClick={() => chooseOption(name, value)}
                       >
-                        {value}
+                        {optionThumbnail(name, value) ? (
+                          <img
+                            className="public-product-option-thumb"
+                            src={optionThumbnail(name, value)!.url}
+                            alt=""
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        <span>{value}</span>
                       </button>
                     );
                   })}

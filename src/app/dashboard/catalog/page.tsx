@@ -66,6 +66,7 @@ export default function ResellerCatalogPage() {
   const [actionError, setActionError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [addMenuProductId, setAddMenuProductId] = useState<string | null>(null);
+  const [stockNoticeProductId, setStockNoticeProductId] = useState<string | null>(null);
   const [comboBuilderOpen, setComboBuilderOpen] = useState(false);
   const [comboSearch, setComboSearch] = useState("");
   const [comboSelection, setComboSelection] = useState<string[]>([]);
@@ -92,7 +93,7 @@ export default function ResellerCatalogPage() {
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (catalog.data?.products ?? [])
-      .filter((product) => activeTab === "explore" || itemByProductId.has(product._id))
+      .filter((product) => activeTab === "mine" ? itemByProductId.has(product._id) : !itemByProductId.has(product._id))
       .filter((product) => {
         if (!term) return true;
         const category = typeof product.categoryId === "object" ? product.categoryId?.name ?? "" : "";
@@ -485,13 +486,25 @@ export default function ResellerCatalogPage() {
                           <button
                             type="button"
                             className="product-card-action primary"
-                            disabled={product.availableStock <= 0}
                             aria-haspopup="menu"
                             aria-expanded={addMenuProductId === product._id}
-                            onClick={() => setAddMenuProductId((current) => current === product._id ? null : product._id)}
+                            onClick={() => {
+                              if (product.availableStock <= 0) {
+                                setAddMenuProductId(null);
+                                setStockNoticeProductId(product._id);
+                                return;
+                              }
+                              setStockNoticeProductId(null);
+                              setAddMenuProductId((current) => current === product._id ? null : product._id);
+                            }}
                           >
                             <Plus size={14} /> Añadir a mi catálogo
                           </button>
+                          {stockNoticeProductId === product._id ? (
+                            <p className="reseller-catalog-stock-notice" role="status">
+                              Este producto está agotado. No puedes añadirlo a tu catálogo hasta que vuelva a tener existencias.
+                            </p>
+                          ) : null}
                           {addMenuProductId === product._id ? (
                             <div className="reseller-card-add-menu-panel" role="menu">
                               <button
