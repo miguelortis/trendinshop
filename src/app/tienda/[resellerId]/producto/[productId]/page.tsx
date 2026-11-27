@@ -253,19 +253,27 @@ export default async function PublicProductPage({ params }: PageProps) {
         </nav>
 
         <section className="public-product-layout public-product-layout-variant">
-          <PublicCartControls
-            resellerId={data.sellerId}
-            storeSlug={data.sellerSlug}
-            productId={product.id}
-            productTitle={product.title}
-            category={product.category}
-            description={product.description}
-            sellerName={sellerName}
-            sellerDescription={data.sellerDescription}
-            sellingPrice={product.sellingPrice}
-            variants={product.variants}
-            productImages={product.images}
-          />
+          {product.available ? (
+            <PublicCartControls
+              resellerId={data.sellerId}
+              storeSlug={data.sellerSlug}
+              productId={product.id}
+              productTitle={product.title}
+              category={product.category}
+              description={product.description}
+              sellerName={sellerName}
+              sellerDescription={data.sellerDescription}
+              sellingPrice={product.sellingPrice}
+              variants={product.variants}
+              productImages={product.images}
+            />
+          ) : (
+            <div className="public-product-unavailable" role="status">
+              <strong>Este producto ya no está disponible</strong>
+              <p>Por ahora no quedan variantes con existencias. Puedes volver al catálogo para explorar otros productos.</p>
+              <Link href={"/tienda/" + resellerId}>Ver productos disponibles</Link>
+            </div>
+          )}
         </section>
 
         <div className="public-product-share-panel public-product-share-panel-below">
