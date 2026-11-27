@@ -3886,6 +3886,8 @@ button, input, select, textarea { font: inherit; }
 .public-catalog-filter-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:12px; border-bottom:1px solid #f0f1f3; }
 .public-catalog-filter-heading strong { display:flex; align-items:center; gap:8px; color:#101828; font-size:12px; }
 .public-catalog-filter-heading button { padding:4px 0; border:0; color:#6941c6; background:transparent; font-size:10px; font-weight:800; cursor:pointer; }
+.public-catalog-filter-heading-actions { display:flex; align-items:center; gap:12px; }
+.public-catalog-filter-close { display:none; align-items:center; gap:5px; padding:6px 8px !important; border:1px solid #e4e7ec !important; border-radius:9px; color:#475467 !important; background:#fff !important; font-size:10px !important; }
 .public-catalog-filter-group { display:grid; gap:9px; }
 .public-catalog-filter-group h3 { margin:0; color:#344054; font-size:11px; font-weight:850; }
 .public-catalog-filter-choice { display:flex; align-items:center; gap:8px; min-width:0; color:#475467; font-size:11px; cursor:pointer; }
@@ -3908,6 +3910,8 @@ button, input, select, textarea { font: inherit; }
 .public-catalog-share-notice { margin:10px 0 0; color:#027a48; font-size:11px; }
 .public-catalog-empty button { margin-top:15px; min-height:38px; padding:0 13px; border:1px solid #d9d0ff; border-radius:9px; color:#53389e; background:#f8f6ff; font-size:11px; font-weight:750; cursor:pointer; }
 @media (max-width:760px) {
+  .public-catalog-filter-close { display:inline-flex; }
+  .public-catalog-filter-heading { position:sticky; top:-17px; z-index:2; margin:-17px -17px 0; padding:14px 17px 12px; background:#fff; border-radius:16px 16px 0 0; }
   .public-catalog-toolbar { flex-wrap:wrap; }
   .public-catalog-search { flex-basis:100%; }
   .public-catalog-filter-toggle,.public-catalog-share-filter { flex:1; }
